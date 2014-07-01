@@ -46,7 +46,7 @@ sc_addr get_random_addr(sc_type type)
 
     addr.seg = g_random_int() % sc_storage_get_segments_count();
     addr.offset = 0;
-    addr.offset = g_random_int() % SEGMENT_SIZE;
+    addr.offset = g_random_int() % SC_SEGMENT_ELEMENTS_COUNT;
 
     return addr;
 }
@@ -56,7 +56,7 @@ sc_element* get_random_element(sc_type type)
     sc_addr id;
 
     id.seg = g_random_int() % sc_storage_get_segments_count();
-    id.offset = g_random_int() % SEGMENT_SIZE;
+    id.offset = g_random_int() % SC_SEGMENT_ELEMENTS_COUNT;
     return sc_storage_get_element(id, SC_FALSE);
 }
 
@@ -79,7 +79,7 @@ void test1()
     sc_uint32 count = 0;
 
     printf("Element size: %d bytes\n", (int)sizeof(sc_element));
-    printf("Segment size: %d elements\n", (int)SEGMENT_SIZE);
+    printf("Segment size: %d elements\n", (int)SC_SEGMENT_ELEMENTS_COUNT);
 
     timer = g_timer_new();
     print_storage_statistics();
@@ -103,8 +103,8 @@ void test1()
     {
         if (idx % 10 < 5)
         {
-            id.seg = idx / SEGMENT_SIZE;
-            id.offset = idx % SEGMENT_SIZE;
+            id.seg = idx / SC_SEGMENT_ELEMENTS_COUNT;
+            id.offset = idx % SC_SEGMENT_ELEMENTS_COUNT;
             /*do
       {
     id = get_random_addr(sc_type_node);

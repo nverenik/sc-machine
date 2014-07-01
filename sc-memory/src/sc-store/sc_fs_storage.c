@@ -174,7 +174,7 @@ sc_segment* sc_fs_storage_load_segment(sc_uint id)
     return segment;
 }
 
-sc_bool sc_fs_storage_read_from_path(sc_segment **segments, sc_uint16 *segments_num)
+sc_bool sc_fs_storage_read_from_path(sc_segment **segments, sc_uint32 *segments_num)
 {
     const gchar *fname = 0;
     sc_uint files_count = 0, idx, to_load;

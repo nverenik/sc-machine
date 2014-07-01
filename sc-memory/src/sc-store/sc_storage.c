@@ -39,55 +39,12 @@ along with OSTIS.  If not, see <http://www.gnu.org/licenses/>.
 // segments array
 sc_segment **segments = 0;
 // number of segments
-sc_uint16 segments_num = 0;
-// number of stored sc-elements
-sc_uint32 stored_elements_count = 0;
+sc_uint32 segments_num = 0;
 
-sc_uint seg_id = 0;
-sc_int32 seg_cache[SEGMENT_CACHE_SIZE];  // cache of segments, that has empty slots
-
-sc_uint storage_time_stamp = 1;
+sc_uint32 storage_time_stamp = 1;
 sc_bool is_initialized = SC_FALSE;
 
-
-// ----------------------------------- SEGMENTS cache --------------------------
-void _sc_storage_segment_cache_init()
-{
-    memset(seg_cache, -1, sizeof(sc_int32) * SEGMENT_CACHE_SIZE);
-}
-
-void _sc_storage_segment_cache_destroy()
-{
-
-}
-
-sc_bool _sc_storage_get_segment_from_cache(sc_addr_seg *seg)
-{
-    sc_uint32 i = 0;
-    sc_segment *segment = 0;
-    sc_addr_seg tmp_seg = 0;
-
-    for (i = 0; i < SEGMENT_CACHE_SIZE; ++i)
-    {
-        if (seg_cache[i] != -1)
-        {
-            tmp_seg = seg_cache[i];
-            segment = sc_storage_get_segment(tmp_seg, SC_TRUE);
-            if (sc_segment_has_empty_slot(segment) == SC_TRUE)
-            {
-                *seg = tmp_seg;
-                return SC_TRUE;
-            }
-        }
-    }
-
-    return SC_FALSE;
-}
-
-void _sc_storage_append_segment_to_cache(sc_addr_seg seg)
-{
-    seg_cache[seg % SEGMENT_CACHE_SIZE] = seg;
-}
+const sc_uint16 s_max_lock_attempts = 100;
 
 
 // -----------------------------------------------------------------------------
@@ -96,33 +53,28 @@ void _sc_storage_append_segment_to_cache(sc_addr_seg seg)
  * - Calculate number of stored sc-elements
  * - Free unused cells in segments
  */
-void sc_storage_update_segments()
-{
-    sc_uint32 idx = 0;
-    sc_uint32 elements_count = 0;
-    sc_uint32 element_free_count = 0;
-    sc_uint32 oldest_time_stamp = 0;
-    sc_segment *seg = 0;
+//void sc_storage_update_segments()
+//{
+//    sc_uint32 idx = 0;
+//    sc_uint32 elements_count = 0;
+//    sc_uint32 element_free_count = 0;
+//    sc_uint32 oldest_time_stamp = 0;
+//    sc_segment *seg = 0;
 
-    stored_elements_count = 0;
+//    oldest_time_stamp = sc_iterator_get_oldest_timestamp();
+//    if (oldest_time_stamp == 0)
+//        oldest_time_stamp = sc_storage_get_time_stamp();
 
-    oldest_time_stamp = sc_iterator_get_oldest_timestamp();
-    if (oldest_time_stamp == 0)
-        oldest_time_stamp = sc_storage_get_time_stamp();
+//    for (idx = 0; idx < segments_num; ++idx)
+//    {
+//        seg = segments[idx];
+//        if (seg == 0)
+//            continue; // @todo segments load
 
-    for (idx = 0; idx < segments_num; ++idx)
-    {
-        seg = segments[idx];
-        if (seg == 0) continue; // @todo segments load
-        elements_count = sc_segment_get_elements_count(seg);
-        stored_elements_count += elements_count;
-        // @todo oldest timestamp
-        element_free_count = sc_segment_free_garbage(seg, oldest_time_stamp);
-
-        if (elements_count < SEGMENT_SIZE || element_free_count > 0)
-            _sc_storage_append_segment_to_cache(idx);
-    }
-}
+//        // @todo oldest timestamp
+//        sc_segment_free_garbage(seg, oldest_time_stamp);
+//    }
+//}
 
 // -----------------------------------------------------------------------------
 
@@ -177,53 +129,26 @@ sc_bool sc_storage_is_initialized()
     return is_initialized;
 }
 
-sc_segment* sc_storage_get_segment(sc_addr_seg seg, sc_bool force_load)
+sc_bool sc_storage_is_element(const sc_memory_context *ctx, sc_addr addr)
 {
-    //! TODO: Make support of force loading
-    g_assert( seg < SC_ADDR_SEG_MAX );
-    return segments[seg];
-}
+    sc_bool res = SC_TRUE;
 
-sc_element* sc_storage_get_element(sc_addr addr, sc_bool force_load)
-{
-    sc_segment *segment = 0;
-    sc_element *res = 0;
+    sc_element *el = sc_storage_element_lock(ctx, addr);
 
-    if (addr.seg >= SC_ADDR_SEG_MAX) return (sc_element*)0;
-
-    segment = segments[addr.seg];
-
-    if (segment == 0)
-    {
-        if (force_load)
-        {
-            //! TODO: make force load
-        }else
-            return (sc_element*)0;
-    }else
-    {
-        res = sc_segment_get_element(segment, addr.offset);
-    }
-
-    return res;//sc_segment_get_element(segment, uri.id);
-}
-
-sc_bool sc_storage_is_element(sc_addr addr)
-{
-    sc_element *el = sc_storage_get_element(addr, SC_TRUE);
     if (el == 0) return SC_FALSE;
-    if (el->flags.type == 0) return SC_FALSE;
-    if (el->delete_time_stamp > 0) return SC_FALSE;
 
-    return SC_TRUE;
+    if (el->flags.type == 0)
+        res = SC_FALSE;
+
+    if (el->delete_time_stamp > 0)
+        res = SC_FALSE;
+
+    sc_storage_element_unlock(ctx, addr);
+
+    return res;
 }
 
-void sc_storage_update_segment_queue()
-{
-
-}
-
-sc_element* sc_storage_append_el_into_segments(sc_element *element, sc_addr *addr)
+sc_element* sc_storage_append_el_into_segments(const sc_memory_context *ctx, sc_element *element, sc_addr *addr)
 {
     sc_segment *segment = 0;
 
@@ -231,33 +156,50 @@ sc_element* sc_storage_append_el_into_segments(sc_element *element, sc_addr *add
     SC_ADDR_MAKE_EMPTY(*addr);
 
     if (sc_iterator_has_any_timestamp())
-        storage_time_stamp++;
+        g_atomic_int_inc(&storage_time_stamp);
 
-    // try to collect and delete garbage
-    if (segments_num >= sc_config_get_max_loaded_segments())
-        sc_storage_update_segments();
-
-    if (_sc_storage_get_segment_from_cache(&addr->seg) == SC_TRUE)
-    {
-        segment = sc_storage_get_segment(addr->seg, SC_TRUE);
-        return sc_segment_append_element(segment, element, &addr->offset);
-    }
-
-    //! @todo maximum segments reached
-    if (segments_num >= sc_config_get_max_loaded_segments())
+    if (g_atomic_int_get(&segments_num) >= sc_config_get_max_loaded_segments())
         return nullptr;
 
-    // if element still not added, then create new segment and append element into it
-    segment = sc_segment_new(segments_num);
-    addr->seg = segments_num;
-    segments[segments_num++] = segment;
+    // try to find segment with empty slots
+    sc_uint32 i;
+    for (i = 0; i < g_atomic_int_get(&segments_num); ++i)
+    {
+        sc_segment *seg = g_atomic_pointer_get(&segments[i]);
 
-    _sc_storage_append_segment_to_cache(addr->seg);
+        if (seg == nullptr)
+            continue;
 
-    return sc_segment_append_element(segment, element, &addr->offset);
+        sc_element *el = sc_segment_lock_empty_element(ctx, seg, &addr->offset);
+        if (el != nullptr)
+        {
+            addr->seg = i;
+            return el;
+        }
+    }
+
+    while (SC_TRUE)
+    {
+        sc_uint32 seg_num = g_atomic_int_get(&segments_num);
+        if (seg_num >= SC_ADDR_SEG_MAX)
+            return nullptr;
+
+        while (g_atomic_int_compare_and_exchange(&segments_num, seg_num, seg_num + 1) == FALSE) {}
+
+        // if element still not added, then create new segment and append element into it
+        segment = sc_segment_new(seg_num);
+        addr->seg = seg_num;
+        segments[seg_num] = segment;
+
+        sc_element *el = sc_segment_lock_empty_element(ctx, segment, &addr->offset);
+        if (el != nullptr)
+            return el;
+    }
+
+    return nullptr;
 }
 
-sc_addr sc_storage_element_new(sc_type type)
+sc_addr sc_storage_element_new(const sc_memory_context *ctx, sc_type type)
 {
     sc_element el;
     sc_addr addr;
@@ -267,41 +209,41 @@ sc_addr sc_storage_element_new(sc_type type)
     el.flags.type = type;
     el.create_time_stamp = storage_time_stamp;
 
-    res = sc_storage_append_el_into_segments(&el, &addr);
+    res = sc_storage_append_el_into_segments(ctx, &el, &addr);
+    sc_storage_element_unlock(ctx, addr);
     g_assert(res != 0);
     return addr;
 }
 
-sc_result sc_storage_element_free(sc_addr addr)
+sc_result sc_storage_element_free(const sc_memory_context *ctx, sc_addr addr)
 {
-    sc_element *el, *el2;
-    sc_addr _addr;
-    sc_uint addr_int;
-
+    GHashTable *lock_table = 0;
     GSList *remove_list = 0;
 
-    el = el2 = 0;
-
-    if (sc_storage_is_element(addr) == SC_FALSE)
+    // first of all we need to collect and lock all elements
+    sc_element *el = sc_storage_element_lock(ctx, addr);
+    if (el == nullptr || el->flags.type == 0)
         return SC_RESULT_ERROR;
 
-//    if (sc_iterator_has_any_timestamp())
-//        storage_time_stamp++;
+    lock_table = g_hash_table_new(g_int_hash, g_int_equal);
+    g_hash_table_insert(lock_table, GUINT_TO_POINTER(SC_ADDR_LOCAL_TO_INT(addr)), el);
 
     remove_list = g_slist_append(remove_list, GUINT_TO_POINTER(SC_ADDR_LOCAL_TO_INT(addr)));
-
     while (remove_list != 0)
     {
         // get sc-addr for removing
-        addr_int = GPOINTER_TO_UINT(remove_list->data);
+        sc_uint32 addr_int = GPOINTER_TO_UINT(remove_list->data);
+        sc_addr _addr;
         _addr.seg = SC_ADDR_LOCAL_SEG_FROM_INT(addr_int);
         _addr.offset = SC_ADDR_LOCAL_OFFSET_FROM_INT(addr_int);
 
         // go to next sc-addr in list
         remove_list = g_slist_delete_link(remove_list, remove_list);
 
-        el = sc_storage_get_element(_addr, SC_TRUE);
+        el = sc_storage_element_lock(ctx, _addr);
+
         g_assert(el != 0 && el->flags.type != 0);
+        g_hash_table_insert(lock_table, GUINT_TO_POINTER(addr_int), el);
 
         // remove registered events before deletion
         sc_event_notify_element_deleted(_addr);
@@ -318,11 +260,15 @@ sc_result sc_storage_element_free(sc_addr addr)
         _addr = el->first_out_arc;
         while (SC_ADDR_IS_NOT_EMPTY(_addr))
         {
-            el2 = sc_storage_get_element(_addr, SC_TRUE);
+            sc_element *el2 = sc_storage_element_lock(ctx, _addr);
+            g_assert(el2 != 0 && el2->flags.type != 0);
+            gpointer p_addr = GUINT_TO_POINTER(SC_ADDR_LOCAL_TO_INT(_addr));
 
             // do not append elements, that have delete_time_stamp != 0
-            if (el2->delete_time_stamp == 0)
-                remove_list = g_slist_append(remove_list, GUINT_TO_POINTER(SC_ADDR_LOCAL_TO_INT(_addr)));
+            if (g_hash_table_lookup(lock_table, p_addr) == nullptr)
+                remove_list = g_slist_append(remove_list, p_addr);
+
+            g_hash_table_insert(lock_table, p_addr, el2);
 
             _addr = el2->arc.next_out_arc;
         }
@@ -330,12 +276,15 @@ sc_result sc_storage_element_free(sc_addr addr)
         _addr = el->first_in_arc;
         while (SC_ADDR_IS_NOT_EMPTY(_addr))
         {
-            el2 = sc_storage_get_element(_addr, SC_TRUE);
+            sc_element *el2 = sc_storage_element_lock(ctx, _addr);
+            g_assert(el2 != 0 && el2->flags.type != 0);
+            gpointer p_addr = GUINT_TO_POINTER(SC_ADDR_LOCAL_TO_INT(_addr));
 
             // do not append elements, that have delete_time_stamp != 0
-            if (el2->delete_time_stamp == 0)
-                remove_list = g_slist_append(remove_list, GUINT_TO_POINTER(SC_ADDR_LOCAL_TO_INT(_addr)));
+            if (g_hash_table_lookup(lock_table, p_addr) == nullptr)
+                remove_list = g_slist_append(remove_list, p_addr);
 
+            g_hash_table_insert(lock_table, p_addr, el2);
 
             _addr = el2->arc.next_in_arc;
         }
@@ -344,6 +293,121 @@ sc_result sc_storage_element_free(sc_addr addr)
         SC_ADDR_MAKE_EMPTY(_addr);
     }
 
+    // now we need to erase all elements
+    GHashTableIter iter;
+    g_hash_table_iter_init(&iter, lock_table);
+    gpointer key, value;
+    while (g_hash_table_iter_next(&iter, &key, &value) == TRUE)
+    {
+        el = value;
+        sc_uint32 uint_addr = GPOINTER_TO_UINT(key);
+        addr.offset = SC_ADDR_LOCAL_OFFSET_FROM_INT(uint_addr);
+        addr.seg = SC_ADDR_LOCAL_SEG_FROM_INT(uint_addr);
+
+        el->flags.type = 0;
+
+        // delete arcs from output and input lists
+        if (el->flags.type & sc_type_arc_mask)
+        {
+            // output arcs
+            sc_addr prev_arc = el->arc.prev_out_arc;
+            sc_addr next_arc = el->arc.next_out_arc;
+
+            if (SC_ADDR_IS_NOT_EMPTY(prev_arc))
+            {
+                sc_element *prev_el_arc = g_hash_table_lookup(lock_table, GUINT_TO_POINTER(SC_ADDR_LOCAL_TO_INT(prev_arc)));
+                if (prev_el_arc == nullptr)
+                {
+                    prev_el_arc = sc_storage_element_lock(ctx, prev_arc);
+                    prev_el_arc->arc.next_out_arc = next_arc;
+                    sc_storage_element_unlock(ctx, prev_arc);
+                }else
+                    prev_el_arc->arc.next_out_arc = next_arc;
+
+            }
+
+            if (SC_ADDR_IS_NOT_EMPTY(next_arc))
+            {
+                sc_element *next_el_arc = g_hash_table_lookup(lock_table, GUINT_TO_POINTER(SC_ADDR_LOCAL_TO_INT(next_arc)));
+                if (next_el_arc == nullptr)
+                {
+                    next_el_arc = sc_storage_element_lock(ctx, next_arc);
+                    next_el_arc->arc.prev_out_arc = prev_arc;
+                    sc_storage_element_unlock(ctx, next_arc);
+                }else
+                    next_el_arc->arc.prev_out_arc = prev_arc;
+            }
+
+            sc_element *b_el = g_hash_table_lookup(lock_table, GUINT_TO_POINTER(SC_ADDR_LOCAL_TO_INT(el->arc.begin)));
+            sc_bool need_unlock = SC_FALSE;
+            if (b_el == nullptr)
+            {
+                b_el = sc_storage_element_lock(ctx, el->arc.begin);
+                need_unlock = SC_TRUE;
+            }
+            if (SC_ADDR_IS_EQUAL(addr, b_el->first_out_arc))
+                b_el->first_out_arc = next_arc;
+
+            if (need_unlock)
+                sc_storage_element_unlock(ctx, el->arc.begin);
+
+            // input arcs
+            prev_arc = el->arc.prev_in_arc;
+            next_arc = el->arc.next_in_arc;
+
+            if (SC_ADDR_IS_NOT_EMPTY(prev_arc))
+            {
+                sc_element *prev_el_arc = g_hash_table_lookup(lock_table, GUINT_TO_POINTER(SC_ADDR_LOCAL_TO_INT(prev_arc)));
+                if (prev_el_arc == nullptr)
+                {
+                    prev_el_arc = sc_storage_element_lock(ctx, prev_arc);
+                    prev_el_arc->arc.next_in_arc = next_arc;
+                    sc_storage_element_unlock(ctx, prev_arc);
+                }else
+                    prev_el_arc->arc.next_in_arc = next_arc;
+            }
+
+            if (SC_ADDR_IS_NOT_EMPTY(next_arc))
+            {
+                sc_element *next_el_arc = g_hash_table_lookup(lock_table, GUINT_TO_POINTER(SC_ADDR_LOCAL_TO_INT(next_arc)));
+                if (next_el_arc == nullptr)
+                {
+                    next_el_arc = sc_storage_element_lock(ctx, next_arc);
+                    next_el_arc->arc.prev_in_arc = prev_arc;
+                    sc_storage_element_unlock(ctx, next_arc);
+                }else
+                    next_el_arc->arc.prev_in_arc = prev_arc;
+            }
+
+            need_unlock = SC_FALSE;
+            sc_element *e_el = g_hash_table_lookup(lock_table, GUINT_TO_POINTER(SC_ADDR_LOCAL_TO_INT(el->arc.end)));
+            if (e_el == nullptr)
+            {
+                e_el = sc_storage_element_lock(ctx, el->arc.end);
+                need_unlock = SC_TRUE;
+            }
+            if (SC_ADDR_IS_EQUAL(addr, b_el->first_in_arc))
+                e_el->first_in_arc = next_arc;
+            if (need_unlock)
+                sc_storage_element_unlock(ctx, el->arc.end);
+        }
+
+    }
+
+    // now unlock elements
+    g_hash_table_iter_init(&iter, lock_table);
+    while (g_hash_table_iter_next(&iter, &key, &value) == TRUE)
+    {
+        sc_uint32 uint_addr = GPOINTER_TO_UINT(key);
+        addr.offset = SC_ADDR_LOCAL_OFFSET_FROM_INT(uint_addr);
+        addr.seg = SC_ADDR_LOCAL_SEG_FROM_INT(uint_addr);
+
+        sc_storage_element_unlock(ctx, addr);
+    }
+
+    g_slist_free(remove_list);
+    g_hash_table_destroy(lock_table);
+
     storage_time_stamp++;
 
     sc_event_emit(addr, SC_EVENT_REMOVE_ELEMENT, addr);
@@ -351,7 +415,7 @@ sc_result sc_storage_element_free(sc_addr addr)
     return SC_RESULT_OK;
 }
 
-sc_addr sc_storage_node_new(sc_type type )
+sc_addr sc_storage_node_new(const sc_memory_context *ctx, sc_type type )
 {
     sc_element el;
     sc_addr addr;
@@ -361,30 +425,38 @@ sc_addr sc_storage_node_new(sc_type type )
 
     el.flags.type = sc_type_node | type;
 
-    sc_storage_append_el_into_segments(&el, &addr);
+    sc_element *locked_el = sc_storage_append_el_into_segments(ctx, &el, &addr);
+    if (locked_el == nullptr)
+    {
+        SC_ADDR_MAKE_EMPTY(addr);
+    }
+    else
+        sc_storage_element_unlock(ctx, addr);
     return addr;
 }
 
-sc_addr sc_storage_link_new()
+sc_addr sc_storage_link_new(const sc_memory_context *ctx)
 {
     sc_element el;
     sc_addr addr;
 
     memset(&el, 0, sizeof(el));
     el.flags.type = sc_type_link;
-    sc_storage_append_el_into_segments(&el, &addr);
+
+    sc_element *locked_el = sc_storage_append_el_into_segments(ctx, &el, &addr);
+    if (locked_el == nullptr)
+    {
+        SC_ADDR_MAKE_EMPTY(addr);
+    }
+    else
+        sc_storage_element_unlock(ctx, addr);
     return addr;
 }
 
-sc_addr sc_storage_arc_new(sc_type type,
-                           sc_addr beg,
-                           sc_addr end)
+sc_addr sc_storage_arc_new(const sc_memory_context *ctx, sc_type type, sc_addr beg, sc_addr end)
 {
     sc_addr addr;
-    sc_element el, *beg_el, *end_el, *tmp_el;
-#if USE_TWO_ORIENTED_ARC_LIST
-    sc_element *tmp_arc;
-#endif
+    sc_element el, *beg_el, *end_el, *tmp_el, tmp_arc;
 
     memset(&el, 0, sizeof(el));
     g_assert( !(sc_type_node & type) );
@@ -419,7 +491,6 @@ sc_addr sc_storage_arc_new(sc_type type,
     tmp_el->arc.next_out_arc = beg_el->first_out_arc;
     tmp_el->arc.next_in_arc = end_el->first_in_arc;
 
-#if USE_TWO_ORIENTED_ARC_LIST
     if (SC_ADDR_IS_NOT_EMPTY(beg_el->first_out_arc))
     {
         tmp_arc = sc_storage_get_element(beg_el->first_out_arc, SC_TRUE);
@@ -431,8 +502,6 @@ sc_addr sc_storage_arc_new(sc_type type,
         tmp_arc = sc_storage_get_element(end_el->first_in_arc, SC_TRUE);
         tmp_arc->arc.prev_in_arc = addr;
     }
-
-#endif
 
     // set our arc as first output/input at begin/end elements
     beg_el->first_out_arc = addr;
@@ -565,7 +634,7 @@ sc_result sc_storage_get_elements_stat(sc_stat *stat)
     {
         segment = segments[s_idx];
         g_assert( segment != (sc_segment*)0 );
-        for (e_idx = 0; e_idx < SEGMENT_SIZE; e_idx++)
+        for (e_idx = 0; e_idx < SC_SEGMENT_ELEMENTS_COUNT; e_idx++)
         {
             type = segment->elements[e_idx].flags.type;
             delete_stamp = segment->elements[e_idx].delete_time_stamp;
@@ -613,5 +682,41 @@ sc_uint sc_storage_get_time_stamp()
 unsigned int sc_storage_get_segments_count()
 {
     return segments_num;
+}
+
+sc_element* sc_storage_element_lock(const sc_memory_context *ctx, sc_addr addr)
+{
+    if (addr.seg >= SC_ADDR_SEG_MAX)
+        return (sc_element*)0;
+
+    sc_segment *segment = g_atomic_pointer_get(&segments[addr.seg]);
+    if (segment == 0)
+        return (sc_element*)0;
+
+    return sc_segment_lock_element(ctx, segment, addr.offset);
+}
+
+sc_element* sc_storage_element_lock_try(const sc_memory_context *ctx, sc_addr addr, sc_uint16 max_attempts)
+{
+    if (addr.seg >= SC_ADDR_SEG_MAX)
+        return (sc_element*)0;
+
+    sc_segment *segment = g_atomic_pointer_get(&segments[addr.seg]);
+    if (segment == 0)
+        return (sc_element*)0;
+
+    return sc_segment_lock_element_try(ctx, segment, addr.offset, max_attempts);
+}
+
+void sc_storage_element_unlock(const sc_memory_context *ctx, sc_addr addr)
+{
+    if (addr.seg >= SC_ADDR_SEG_MAX)
+        return (sc_element*)0;
+
+    sc_segment *segment = g_atomic_pointer_get(&segments[addr.seg]);
+    if (segment == 0)
+        return (sc_element*)0;
+
+    return sc_segment_unlock_element(ctx, segment, addr.offset);
 }
 

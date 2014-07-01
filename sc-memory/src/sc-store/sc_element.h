@@ -32,18 +32,12 @@ struct _sc_arc_info
     sc_addr end;
     sc_addr next_out_arc; // sc-addr of next output arc in list
     sc_addr next_in_arc; // sc-addr of next input arc in list
-#if USE_TWO_ORIENTED_ARC_LIST
     sc_addr prev_out_arc; // sc-addr of pevious output arc in list
     sc_addr prev_in_arc; // sc-addr of previous input arc in list
-#endif
 };
 
-#if USE_TWO_ORIENTED_ARC_LIST
-#define CONTENT_DATA_LEN 32//(sizeof(sc_arc_info) - sizeof(sc_uint32))
-#else
-#define CONTENT_DATA_LEN 32
-#endif
 
+#define CONTENT_DATA_LEN 32//(sizeof(sc_arc_info) - sizeof(sc_uint32))
 
 /*! Structure to store content information
  * Data field store checksum for data, that stores in specified sc-link.

@@ -53,7 +53,7 @@ sc_segment* sc_fs_storage_load_segment(sc_uint id);
  * @param segments_num Pointer to container for number of segments
  * It will be contain pointers to loaded segments.
  */
-sc_bool sc_fs_storage_read_from_path(sc_segment **segments, sc_uint16 *segments_num);
+sc_bool sc_fs_storage_read_from_path(sc_segment **segments, sc_uint32 *segments_num);
 
 /*! Save segments to file system
  *

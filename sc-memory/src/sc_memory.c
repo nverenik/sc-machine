@@ -39,9 +39,6 @@ sc_memory_context * s_memory_default_ctx = 0;
 
 GRecMutex mutex;
 
-#define LOCK g_rec_mutex_lock(&mutex);
-#define UNLOCK g_rec_mutex_unlock(&mutex);
-
 void sc_memory_params_clear(sc_memory_params *params)
 {
     params->clear = SC_FALSE;
@@ -135,126 +132,70 @@ void sc_memory_context_free(sc_memory_context *ctx)
 
 sc_bool sc_memory_is_initialized()
 {
-    sc_bool res;
-    LOCK;
-    res = sc_storage_is_initialized();
-    UNLOCK;
-    return res;
+    return sc_storage_is_initialized();
 }
 
 sc_bool sc_memory_is_element(sc_memory_context const * ctx, sc_addr addr)
 {
-    sc_bool res;
-    LOCK;
-    res = sc_storage_is_element(addr);
-    UNLOCK;
-    return res;
+    return sc_storage_is_element(addr);
 }
 
 sc_result sc_memory_element_free(sc_memory_context const * ctx, sc_addr addr)
 {
-    sc_result res;
-    LOCK;
-    res = sc_storage_element_free(addr);
-    UNLOCK;
-    return res;
+    return sc_storage_element_free(addr);
 }
 
-sc_addr sc_memory_node_new(sc_memory_context const * ctx, sc_type type)
+sc_addr sc_memory_node_new(const sc_memory_context * ctx, sc_type type)
 {
-    sc_addr res;
-    LOCK;
-    res = sc_storage_node_new(type);
-    UNLOCK;
-    return res;
+    return sc_storage_node_new(ctx, type);
 }
 
 sc_addr sc_memory_link_new(sc_memory_context const * ctx)
 {
-    sc_addr res;
-    LOCK;
-    res = sc_storage_link_new();
-    UNLOCK;
-    return res;
+    return sc_storage_link_new();
 }
 
 sc_addr sc_memory_arc_new(sc_memory_context const * ctx, sc_type type, sc_addr beg, sc_addr end)
 {
-    sc_addr res;
-    LOCK;
-    res = sc_storage_arc_new(type, beg, end);
-    UNLOCK;
-    return res;
+    return sc_storage_arc_new(type, beg, end);
 }
 
 sc_result sc_memory_get_element_type(sc_memory_context const * ctx, sc_addr addr, sc_type *result)
 {
-    sc_result res;
-    LOCK;
-    res = sc_storage_get_element_type(addr, result);
-    UNLOCK;
-    return res;
+    return sc_storage_get_element_type(addr, result);
 }
 
 sc_result sc_memory_change_element_subtype(sc_memory_context const * ctx, sc_addr addr, sc_type type)
 {
-    sc_result res;
-    LOCK;
-    res = sc_storage_change_element_subtype(addr, type);
-    UNLOCK;
-    return res;
+    return sc_storage_change_element_subtype(addr, type);
 }
 
 sc_result sc_memory_get_arc_begin(sc_memory_context const * ctx, sc_addr addr, sc_addr *result)
 {
-    sc_result res;
-    LOCK;
-    res = sc_storage_get_arc_begin(addr, result);
-    UNLOCK;
-    return res;
+    return sc_storage_get_arc_begin(addr, result);
 }
 
 sc_result sc_memory_get_arc_end(sc_memory_context const * ctx, sc_addr addr, sc_addr *result)
 {
-    sc_result res;
-    LOCK;
-    res = sc_storage_get_arc_end(addr, result);
-    UNLOCK;
-    return res;
+    return sc_storage_get_arc_end(addr, result);
 }
 
 sc_result sc_memory_set_link_content(sc_memory_context const * ctx, sc_addr addr, const sc_stream *stream)
 {
-    sc_result res;
-    LOCK;
-    res = sc_storage_set_link_content(addr, stream);
-    UNLOCK;
-    return res;
+    return sc_storage_set_link_content(addr, stream);
 }
 
 sc_result sc_memory_get_link_content(sc_memory_context const * ctx, sc_addr addr, sc_stream **stream)
 {
-    sc_result res;
-    LOCK;
-    res = sc_storage_get_link_content(addr, stream);
-    UNLOCK;
-    return res;
+    return sc_storage_get_link_content(addr, stream);
 }
 
 sc_result sc_memory_find_links_with_content(sc_memory_context const * ctx, sc_stream const * stream, sc_addr **result, sc_uint32 *result_count)
 {
-    sc_result res;
-    LOCK;
-    res = sc_storage_find_links_with_content(stream, result, result_count);
-    UNLOCK;
-    return res;
+    return sc_storage_find_links_with_content(stream, result, result_count);
 }
 
 sc_result sc_memory_stat(sc_memory_context const * ctx, sc_stat *stat)
 {
-    sc_result res;
-    LOCK;
-    res = sc_storage_get_elements_stat(stat);
-    UNLOCK;
-    return res;
+    return sc_storage_get_elements_stat(stat);
 }

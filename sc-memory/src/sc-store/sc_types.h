@@ -26,7 +26,10 @@ along with OSTIS.  If not, see <http://www.gnu.org/licenses/>.
 #include "sc_defines.h"
 #include <memory.h>
 #include <stdlib.h>
+
+#ifndef nullptr
 #define nullptr ((void*)0)
+#endif
 
 // base types
 typedef signed char sc_int8;
@@ -67,7 +70,7 @@ typedef enum _sc_bool sc_bool;
 #define SC_ADDR_SEG_MAX     SC_MAXUINT16
 #define SC_ADDR_OFFSET_MAX  SC_MAXUINT16
 
-#define SEGMENT_SIZE        SC_MAXUINT16    // number of elements in segment
+#define SC_SEGMENT_ELEMENTS_COUNT        SC_MAXUINT16    // number of elements in segment
 
 // Types for segment and offset
 typedef sc_uint16 sc_addr_seg;
@@ -224,6 +227,7 @@ typedef struct _sc_arc_info sc_arc_info;
 typedef struct _sc_access_levels sc_access_levels;
 typedef struct _sc_element_locks sc_element_locks;
 typedef struct _sc_element_flags sc_element_flags;
+typedef struct _sc_memory_context sc_memory_context;
 typedef struct _sc_element sc_element;
 typedef struct _sc_segment sc_segment;
 typedef struct _sc_addr sc_addr;
