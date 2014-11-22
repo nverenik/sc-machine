@@ -3,6 +3,9 @@ DESTDIR = ../../bin
 
 INCLUDEPATH += ../../sc-memory/src
 unix {
+    # force OS to search libraries in the directory with executable
+    QMAKE_LFLAGS += -Wl,-rpath,"'\$$ORIGIN'"
+
     LIBS += $$quote(-L$$DESTDIR) -lsc_memory
     CONFIG += link_pkgconfig
     PKGCONFIG += glib-2.0
