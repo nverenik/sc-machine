@@ -31,7 +31,9 @@ typedef sc_result (*fEngineStreamCreate)(const sc_fm_engine *engine, const sc_ch
 typedef sc_result (*fEngineAddrRefAppend)(const sc_fm_engine *engine, sc_addr addr, const sc_check_sum *check_sum);
 //! Pointer to function, that removes reference to the sc-addr for specified sc-link
 typedef sc_result (*fEngineAddrRefRemove)(const sc_fm_engine *engine, sc_addr addr, const sc_check_sum *check_sum);
-//! Pointer to function, that finds all links with specified content
+/*! Pointer to function, that finds all links with specified content.
+ * If there are no any items found, then returns SC_RESULT_ERROR_NOT_FOUND
+ */
 typedef sc_result (*fEngineFind)(const sc_fm_engine *engine, const sc_check_sum *check_sum, sc_addr **result, sc_uint32 *result_count);
 //! Function to clear file memory
 typedef sc_result (*fEngineClear)(const sc_fm_engine *engine);
@@ -39,7 +41,8 @@ typedef sc_result (*fEngineClear)(const sc_fm_engine *engine);
 typedef sc_result (*fEngineSave)(const sc_fm_engine *engine);
 //! Pointer to function, that destroys storage specified data
 typedef sc_result (*fEngineDestroyData)(const sc_fm_engine *engine);
-
+//! Pointer to function, that clean file memory state on sc-memory start (invalid backward links to sc-addrs)
+typedef sc_result (*fEngineCleanState)(const sc_fm_engine *engine);
 
 /*! Sturcture that provides file memory storage engine object
  */
@@ -55,6 +58,7 @@ struct _sc_fm_engine
     fEngineClear funcClear;
     fEngineSave funcSave;
     fEngineDestroyData funcDestroyData;
+    fEngineCleanState funcCleanState;
 };
 
 

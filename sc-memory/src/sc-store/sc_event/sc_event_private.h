@@ -30,12 +30,14 @@ along with OSTIS.  If not, see <http://www.gnu.org/licenses/>.
  */
 struct _sc_event
 {
+    //! Pointer to context that create event
+    sc_memory_context * ctx;
     //! sc-addr of listened sc-element
     sc_addr element;
     //! Event type
     sc_event_type type;
-    //! Event id
-    sc_uint32 id;
+    //! Pointer to user data
+    sc_pointer data;
     //! Pointer to callback function, that calls, when event emited
     fEventCallback callback;
     //! Pointer to callback function, that calls, when subscribed sc-element deleted
@@ -61,10 +63,11 @@ sc_result sc_event_notify_element_deleted(sc_addr element);
 
 /*! Emit event with \p type for sc-element \p el with argument \p arg
  * @param el sc-addr of element that emitting event
- * @param type emitting event type
- * @param arg argument of emitting event (depend of event type)
+ * @param el_access Acces level of \p el
+ * @param type Emitting event type
+ * @param arg Argument of emitting event (depend of event type)
  * @return If event emitted without any errors, then return SC_OK; otherwise return SC_ERROR code
  */
-sc_result sc_event_emit(sc_addr el, sc_event_type type, sc_addr arg);
+sc_result sc_event_emit(sc_addr el, sc_access_levels el_acces, sc_event_type type, sc_addr arg);
 
 #endif

@@ -25,6 +25,9 @@ along with OSTIS.  If not, see <http://www.gnu.org/licenses/>.
 #include "translator.h"
 
 #include <boost/filesystem.hpp>
+#include <boost/algorithm/string.hpp>
+
+#include <fstream>
 #include <assert.h>
 
 #include "scs_translator.h"
@@ -54,22 +57,39 @@ bool Builder::run(const BuilderParams &params)
     collectFiles();
 
     // initialize sc-memory
-    sc_memory_params mparams;
-    sc_memory_params_clear(&mparams);
-    mparams.clear = mParams.clearOutput ? SC_TRUE : SC_FALSE;
-    mparams.config_file = mParams.configFile.empty() ? 0 : mParams.configFile.c_str();
-    mparams.repo_path = mParams.outputPath.c_str();
-    mparams.ext_path = mParams.extensionsPath.size() > 0 ? mParams.extensionsPath.c_str() : 0;
+    sc_memory_params p;
+    sc_memory_params_clear(&p);
+    p.clear = mParams.clearOutput ? SC_TRUE : SC_FALSE;
+    p.config_file = mParams.configFile.empty() ? 0 : mParams.configFile.c_str();
+    p.repo_path = mParams.outputPath.c_str();
+    p.ext_path = mParams.extensionsPath.size() > 0 ? mParams.extensionsPath.c_str() : 0;
 
-    mContext = sc_memory_initialize(&mparams);
+    sc_memory_initialize(&p);
 
-    // print founded files
-    uint32 done = 0;
+    mContext = sc_memory_context_new(sc_access_lvl_make_min);
+
+    std::cout << "Build knowledge base from sources... " << std::endl;
+
+    // process founded files
+    uint32 done = 0, last_progress = -1;
     tFileSet::iterator it, itEnd = mFileSet.end();
     for (it = mFileSet.begin(); it != itEnd; ++it)
     {
-        float progress = (float)++done / (float)mFileSet.size();
-        std::cout << "[" << (int) (progress * 100.f) << "%] " << *it << std::endl;
+        uint32 progress = ((float)++done / (float)mFileSet.size()) * 100;
+        if (last_progress != progress)
+        {
+            if (progress % 10 == 0)
+            {
+                std::cout << "[" << progress << "%]";
+                std::cout.flush();
+            } else
+            {
+                std::cout << ".";
+                std::cout.flush();
+            }
+            last_progress = progress;
+        }
+
         try
         {
             processFile(*it);
@@ -80,6 +100,7 @@ bool Builder::run(const BuilderParams &params)
             mErrors.push_back(ss.str());
         }
     }
+    std::cout << std::endl << "done" << std::endl;
 
     // print errors
     std::cout << std::endl << "-------" << std::endl << "Errors:" << std::endl;
@@ -100,7 +121,8 @@ bool Builder::run(const BuilderParams &params)
     std::cout << "Links: " << stat.link_count << "(" << ((float)stat.link_count / (float)all_count) * 100 << "%)"  << std::endl;
     std::cout << "Total: " << all_count << std::endl;
 
-    sc_memory_shutdown();
+    sc_memory_context_free(mContext);
+    sc_memory_shutdown(SC_TRUE);
 
     return true;
 }
@@ -122,7 +144,9 @@ bool Builder::processFile(const String &filename)
     size_t n = filename.rfind(".");
     if (n == std::string::npos)
     {
-        std::cout << "\tCan't determine file extension" << std::endl;
+        THROW_EXCEPT(Exception::ERR_FILE_NOT_FOUND,
+                    "Can't determine file extension " + filename,
+                     filename, 0);
         return false;
     }
 
@@ -131,7 +155,9 @@ bool Builder::processFile(const String &filename)
     tTranslatorFactories::iterator it = mTranslatorFactories.find(ext);
     if (it == mTranslatorFactories.end())
     {
-        std::cout << "\tThere are no translators, that support " << ext << " extension" << std::endl;
+        THROW_EXCEPT(Exception::ERR_ITEM_NOT_FOUND,
+                     "There are no translators, that support " + ext + " extension",
+                     filename, 0);
         return false;
     }
 
@@ -148,9 +174,9 @@ bool Builder::processFile(const String &filename)
     return result;
 }
 
-void Builder::collectFiles()
+void Builder::collectFiles(const String & path)
 {
-    boost::filesystem::recursive_directory_iterator itEnd, it(mParams.inputPath);
+    boost::filesystem::recursive_directory_iterator itEnd, it(path);
     while (it != itEnd)
     {
         if (!boost::filesystem::is_directory(*it))
@@ -164,16 +190,63 @@ void Builder::collectFiles()
                 mFileSet.insert(filename);
         }
 
-
         try
         {
-            ++it; // 5.
+            ++it;
         }
-        catch(std::exception& ex)
+        catch (std::exception & ex)
         {
             std::cout << ex.what() << std::endl;
-            it.no_push(); // 6.
-            try { ++it; } catch(...) { std::cout << "!!" << std::endl; return; } // 7.
+            it.no_push();
+            try
+            {
+                ++it;
+            } catch(...)
+            {
+                std::cout << ex.what() << std::endl;
+                return;
+            }
+        }
+    }
+}
+
+void Builder::collectFiles()
+{
+    mFileSet.clear();
+    if (boost::filesystem::is_directory(mParams.inputPath))
+    {
+        collectFiles(mParams.inputPath);
+    }
+    else if (boost::filesystem::is_regular_file(mParams.inputPath))
+    {
+        std::ifstream infile;
+        infile.open(mParams.inputPath.c_str());
+        if (infile.is_open())
+        {
+            String path;
+            while (std::getline(infile, path))
+            {
+                boost::trim(path);
+                if (StringUtil::startsWith(path, "#", true))
+                    continue;
+
+                if (!path.empty())
+                {
+                    if (boost::filesystem::is_directory(path))
+                        collectFiles(path);
+                    else
+                    {
+                        StringStream ss;
+                        ss << path << " isn't a directory";
+                        mErrors.push_back(ss.str());
+                    }
+                }
+            }
+        } else
+        {
+            StringStream ss;
+            ss << "Can't open file: " << mParams.inputPath;
+            mErrors.push_back(ss.str());
         }
     }
 

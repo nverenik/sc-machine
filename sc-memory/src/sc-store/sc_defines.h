@@ -23,6 +23,18 @@ along with OSTIS.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef _sc_defines_h_
 #define _sc_defines_h_
 
+#ifdef SC_DEBUG
+# define SC_DEBUG_MODE 1
+#else
+# define SC_DEBUG_MODE 0
+#endif
+
+#ifdef SC_PROFILE
+# define SC_PROFILE_MODE 1
+#else
+# define SC_PROFILE_MODE 0
+#endif
+
 /*! Bound empty slot serach
  *
  * Can be used just with USE_SEGMENT_EMPTY_SLOT_BUFFER = 0
@@ -32,14 +44,9 @@ along with OSTIS.  If not, see <http://www.gnu.org/licenses/>.
 //! Enable network scaling
 #define USE_NETWORK_SCALE 0
 
-
-#define SEGMENT_EMPTY_SEARCH_LEN 1024 // number of element in two directions to search next empty slot in segment
-#define SEGMENT_EMPTY_BUFFER_SIZE 2048 // number of empty slot buffer for segment
-#define SEGMENT_EMPTY_MAX_UPDATE_THREADS 8 // number of maximum threads to update empty slots
-
-#define SEGMENT_CACHE_SIZE      8  // size of segments cache (segments with empty slots)
 #define MAX_PATH_LENGTH 1024
 
-#define SC_CONCURRENCY_LEVEL   32  // max number of independent threads that can work in parallel with memory
+#define SC_CONCURRENCY_LEVEL   32   // max number of independent threads that can work in parallel with memory
+#define SC_SEGMENT_CACHE_SIZE  32   // size of segments cache
 
 #endif

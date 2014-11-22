@@ -42,7 +42,7 @@ const gchar *addr_key_group = "addrs";
 GModule *fm_engine_module = 0;
 gchar fm_engine_module_path[MAX_PATH_LENGTH + 1];
 typedef sc_fm_engine* (*fFmEngineInitFunc)();
-typedef void (*fFmEngineShutdownFunc)();
+typedef sc_result (*fFmEngineShutdownFunc)();
 
 // ----------------------------------------------
 
@@ -134,21 +134,45 @@ sc_bool sc_fs_storage_initialize(const gchar *path, sc_bool clear)
     return SC_TRUE;
 }
 
-sc_bool sc_fs_storage_shutdown(sc_segment **segments)
+sc_bool sc_fs_storage_shutdown(sc_segment **segments, sc_bool save_segments)
 {    
     g_message("Shutdown sc-storage");
 
-    g_message("Write segments");
-    sc_fs_storage_write_to_path(segments);
+    if (save_segments == SC_TRUE)
+    {
+        g_message("Write segments");
+        sc_fs_storage_write_to_path(segments);
+    }
 
+    sc_bool res = SC_FALSE;
     g_message("Save file memory state");
     if (sc_fm_save(fm_engine) != SC_RESULT_OK)
         g_critical("Error while saves file memory");
 
+    sc_fm_free(fm_engine);
+
+    fFmEngineShutdownFunc func;
+    g_message("Shutting down file memory engine: %s", fm_engine_module_path);
+    if (g_module_symbol(fm_engine_module, "shutdown", (gpointer*) &func) == FALSE)
+    {
+        g_critical("Can't find 'shutdown' symbol in module: %s", fm_engine_module_path);
+    }else
+    {
+        if (func() != SC_RESULT_OK)
+            g_critical("Can't shutdown file memory properly: %s", fm_engine_module_path);
+        else
+            res = SC_TRUE;
+    }
+
+    if (g_module_close(fm_engine_module) != TRUE)
+        g_critical("Error while close module: %s", fm_engine_module_path);
+
+    fm_engine = 0;
+    fm_engine_module = 0;
 
     g_free(repo_path);
 
-    return SC_TRUE;
+    return res;
 }
 
 void _get_segment_path(const gchar *path, 
@@ -215,7 +239,15 @@ sc_bool sc_fs_storage_read_from_path(sc_segment **segments, sc_uint32 *segments_
     g_message("Segments loaded: %u", idx);
 
     g_dir_close(dir);
-    return SC_TRUE;
+
+    g_assert(fm_engine != nullptr);
+    g_message("Clean file memory state");
+    sc_bool r = sc_fm_clean_state(fm_engine) == SC_RESULT_OK;
+
+    if (r == SC_FALSE)
+        g_error("File memory wasn't clean properly");
+
+    return r;
 }
 
 sc_bool sc_fs_storage_write_to_path(sc_segment **segments)
@@ -269,7 +301,7 @@ sc_result sc_fs_storage_write_content(sc_addr addr, const sc_check_sum *check_su
 
     if (sc_fm_stream_new(fm_engine, check_sum, SC_STREAM_WRITE, &out_stream) == SC_RESULT_OK)
     {
-        g_assert(out_stream != 0);
+        g_assert(out_stream != nullptr);
         // reset input stream positon to begin
         sc_stream_seek(stream, SC_STREAM_SEEK_SET, 0);
 
@@ -295,6 +327,9 @@ sc_result sc_fs_storage_write_content(sc_addr addr, const sc_check_sum *check_su
         }
         sc_stream_free(out_stream);
 
+        // reset input stream positon to begin
+        sc_stream_seek(stream, SC_STREAM_SEEK_SET, 0);
+
         return sc_fs_storage_add_content_addr(addr, check_sum);
     }
 
@@ -303,19 +338,25 @@ sc_result sc_fs_storage_write_content(sc_addr addr, const sc_check_sum *check_su
 
 sc_result sc_fs_storage_add_content_addr(sc_addr addr, const sc_check_sum *check_sum)
 {
-    g_assert(fm_engine != 0);
+    g_assert(fm_engine != nullptr);
     return sc_fm_addr_ref_append(fm_engine, addr, check_sum);
+}
+
+sc_result sc_fs_storage_remove_content_addr(sc_addr addr, const sc_check_sum *check_sum)
+{
+    g_assert(fm_engine != nullptr);
+    return sc_fm_addr_ref_remove(fm_engine, addr, check_sum);
 }
 
 sc_result sc_fs_storage_find_links_with_content(const sc_check_sum *check_sum, sc_addr **result, sc_uint32 *result_count)
 {
-    g_assert(fm_engine != 0);
+    g_assert(fm_engine != nullptr);
     return sc_fm_find(fm_engine, check_sum, result, result_count);
 }
 
 sc_result sc_fs_storage_get_checksum_content(const sc_check_sum *check_sum, sc_stream **stream)
 {
-    g_assert(fm_engine != 0);
+    g_assert(fm_engine != nullptr);
     return sc_fm_stream_new(fm_engine, check_sum, SC_STREAM_READ, stream);
 }
 

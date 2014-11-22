@@ -29,6 +29,9 @@ extern "C"
 #include "sc_helper.h"
 }
 
+#define POINTER_TO_UINT(p)	((sc_uint) (sc_ulong) (p))
+#define UINT_TO_POINTER(u)	((sc_pointer) (sc_ulong) (u))
+
 typedef enum
 {
     SCTP_CMD_UNKNOWN            = 0x00, // unkown command
@@ -38,8 +41,8 @@ typedef enum
     SCTP_CMD_CREATE_NODE        = 0x04, // create new sc-node
     SCTP_CMD_CREAET_LINK        = 0x05, // create new sc-link
     SCTP_CMD_CREATE_ARC         = 0x06, // create new sc-arc
-    SCTP_CMD_GET_ARC_BEGIN      = 0x07, // return begin element of sc-arc
-    SCTP_CMD_GET_ARC_END        = 0x08, // return end element of sc-arc
+    SCTP_CMD_GET_ARC            = 0x07, // return begin element of sc-arc
+
     SCTP_CMD_GET_LINK_CONTENT   = 0x09, // return content of sc-link
     SCTP_CMD_FIND_LINKS         = 0x0a, // return sc-links with specified content
     SCTP_CMD_SET_LINK_CONTENT   = 0x0b, // setup new content for the link

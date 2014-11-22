@@ -3,25 +3,27 @@ extern "C"
 {
 #include "sc_memory_headers.h"
 #include "sc-store/sc_store.h"
+#include "sc_helper.h"
 }
+#include <iostream>
 #include <vector>
 #include <limits>
 #include <glib.h>
 
-#define nodes_append_count 25000000
-#define nodes_remove_count 25000000
-#define arcs_append_count  25000000
-#define arcs_remove_count  0
-#define link_append_count 20000
-#define iterator_alloc_count 10000000
+sc_memory_context * s_default_ctx = 0;
+sc_memory_params params;
 
-const char* repo_path = "repo";
-GTimer *timer = 0;
+// ------
+void initialize_memory()
+{
+    s_default_ctx = sc_memory_initialize(&params);
+}
 
-std::vector<sc_addr> segment_node_del;
-std::vector<sc_addr> arc_creation_vector;
-
-sc_memory_context *s_default_ctx = 0;
+void shutdown_memory()
+{
+    sc_memory_shutdown(SC_FALSE);
+    s_default_ctx = 0;
+}
 
 void print_storage_statistics()
 {
@@ -29,598 +31,592 @@ void print_storage_statistics()
 
     sc_memory_stat(s_default_ctx, &stat);
 
-    sc_uint64 nodes = stat.node_count;
-    sc_uint64 nodes_del = nodes - stat.node_live_count;
-    sc_uint64 arcs = stat.arc_count;
-    sc_uint64 arcs_del = arcs - stat.arc_live_count;
-    sc_uint64 links = stat.link_count;
-    sc_uint64 links_del = links - stat.link_live_count;
+    sc_uint32 nodes = stat.node_count;
+    sc_uint32 arcs = stat.arc_count;
+    sc_uint32 links = stat.link_count;
 
-    printf("--- Storage statistics: ---\n \tNodes: %llu (%llu deleted)\n\tArcs: %llu (%llu deleted)\n\tLinks: %llu (%llu deleted)\n\tEmpty: %llu\n---\n",
-           nodes, nodes_del, arcs, arcs_del, links, links_del, stat.empty_count);
+    printf("--- Storage statistics: ---\n \tSegments: %u\n\tNodes: %u\n\tArcs: %u\n\tLinks: %u\n\tEmpty: %u\n---\n",
+           stat.segments_count, nodes, arcs, links, stat.empty_count);
 }
 
-sc_addr get_random_addr(sc_type type)
+// -------------------------
+gpointer create_context(gpointer data)
 {
-    sc_addr addr;
-
-    addr.seg = g_random_int() % sc_storage_get_segments_count();
-    addr.offset = 0;
-    addr.offset = g_random_int() % SC_SEGMENT_ELEMENTS_COUNT;
-
-    return addr;
-}
-
-sc_element* get_random_element(sc_type type)
-{
-    sc_addr id;
-
-    id.seg = g_random_int() % sc_storage_get_segments_count();
-    id.offset = g_random_int() % SC_SEGMENT_ELEMENTS_COUNT;
-    return sc_storage_get_element(id, SC_FALSE);
-}
-
-bool is_sc_addr_in_segment_node_vector(sc_addr addr)
-{
-    sc_uint32 n = segment_node_del.size();
-    for (sc_uint32 i = 0; i < n; i++)
+    std::vector<sc_memory_context*> contexts;
+    contexts.resize(SC_ACCESS_LVL_MAX_VALUE * SC_ACCESS_LVL_MAX_VALUE);
+    for (sc_uint32 i = 0; i < SC_ACCESS_LVL_MAX_VALUE; ++i)
     {
-        if (SC_ADDR_IS_EQUAL(addr, segment_node_del[i]))
-            return true;
+        for (sc_uint32 j = 0; j < SC_ACCESS_LVL_MAX_VALUE; ++j)
+        {
+            contexts[i * SC_ACCESS_LVL_MAX_VALUE + j] = sc_memory_context_new(sc_access_lvl_make(i, j));
+            g_usleep(g_random_int() % 100);
+        }
     }
 
-    return false;
+
+    for (sc_uint32 i = 0; i < contexts.size(); ++i)
+        sc_memory_context_free(contexts[i]);
+
+    return 0;
 }
 
-void test1()
+void test_context()
 {
-    sc_uint idx = 0;
-    sc_addr id, id2;
+    static const sc_uint32 thread_count = 128;
+
+    initialize_memory();
+
+    std::vector<GThread*> threads;
+    threads.resize(thread_count);
+
+    std::cout << "Threads: " << thread_count << std::endl;
+    for (sc_uint32 i = 0; i < thread_count; ++i)
+        threads[i] = g_thread_new("Context test", create_context, 0);
+
+    for (sc_uint32 i = 0; i < thread_count; ++i)
+        g_thread_join(threads[i]);
+
+    print_storage_statistics();
+
+    shutdown_memory();
+}
+
+// ---------------------------
+
+void test_access_levels()
+{
+    sc_uint8 a = sc_access_lvl_make(SC_ACCESS_LVL_MIN_VALUE, SC_ACCESS_LVL_MIN_VALUE);
+    sc_uint8 b = sc_access_lvl_make(SC_ACCESS_LVL_MAX_VALUE, SC_ACCESS_LVL_MAX_VALUE);
+
+    g_assert(sc_access_lvl_min(a, b) == a);
+    g_assert(sc_access_lvl_max(a, b) == b);
+
+    a = sc_access_lvl_make(SC_ACCESS_LVL_MIN_VALUE, SC_ACCESS_LVL_MAX_VALUE);
+    g_assert(sc_access_lvl_min(a, b) == sc_access_lvl_make(SC_ACCESS_LVL_MIN_VALUE, SC_ACCESS_LVL_MAX_VALUE));
+    g_assert(sc_access_lvl_max(a, b) == b);
+    g_assert(!sc_access_lvl_check_read(a, b));
+    g_assert(sc_access_lvl_check_write(a, b));
+
+    a = sc_access_lvl_make(SC_ACCESS_LVL_MAX_VALUE, SC_ACCESS_LVL_MIN_VALUE);
+    g_assert(sc_access_lvl_min(a, b) == sc_access_lvl_make(SC_ACCESS_LVL_MAX_VALUE, SC_ACCESS_LVL_MIN_VALUE));
+    g_assert(sc_access_lvl_max(a, b) == b);
+    g_assert(sc_access_lvl_check_read(a, b));
+    g_assert(!sc_access_lvl_check_write(a, b));
+
+
+
+    initialize_memory();
+
+    sc_access_levels al1 = sc_access_lvl_make(5, 5);
+    sc_access_levels al2 = sc_access_lvl_make(SC_ACCESS_LVL_MIN_VALUE, SC_ACCESS_LVL_MIN_VALUE);
+    sc_access_levels al_max = sc_access_lvl_make(SC_ACCESS_LVL_MAX_VALUE, SC_ACCESS_LVL_MAX_VALUE);
+
+    sc_memory_context *ctx1 = sc_memory_context_new(al1);
+    sc_memory_context *ctx2 = sc_memory_context_new(al2);
+
+    sc_addr addr1 = sc_memory_node_new(ctx1, sc_type_node_abstract);
+    sc_addr addr2 = sc_memory_node_new(ctx2, sc_type_node_class);
+
+    // types
+    sc_type type;
+    sc_result r = sc_memory_get_element_type(ctx1, addr1, &type);
+    g_assert(r == SC_RESULT_OK && (type | sc_type_node_abstract));
+
+    r = sc_memory_get_element_type(ctx2, addr1, &type);
+    g_assert(r == SC_RESULT_ERROR_NO_READ_RIGHTS);
+
+
+    // get rights
+    sc_access_levels al;
+    r = sc_memory_get_element_access_levels(ctx1, addr1, &al);
+    g_assert(r == SC_RESULT_OK && (al == al1));
+
+    r = sc_memory_get_element_access_levels(ctx2, addr1, &al);
+    g_assert(r == SC_RESULT_ERROR_NO_READ_RIGHTS);
+
+    // set rights
+    sc_access_levels alr;
+    r = sc_memory_get_element_access_levels(ctx2, addr2, &al);
+    g_assert(r == SC_RESULT_OK && (al == al2));
+
+    r = sc_memory_set_element_access_levels(ctx1, addr2, al1, &alr);
+    g_assert(r == SC_RESULT_OK && (alr == al1));
+
+    r = sc_memory_set_element_access_levels(ctx1, addr2, al_max, &alr);
+    g_assert(r == SC_RESULT_OK && (alr == al1));
+
+    r = sc_memory_set_element_access_levels(ctx2, addr2, al_max, &alr);
+    g_assert(r == SC_RESULT_ERROR_NO_WRITE_RIGHTS);
+
+    // links
+    const char * data = "Test";
+    sc_stream * stream1 = sc_stream_memory_new(data, strlen(data), SC_STREAM_READ, SC_FALSE);
+    sc_stream * stream2 = sc_stream_memory_new(data, strlen(data), SC_STREAM_READ, SC_FALSE);
+    sc_addr link1 = sc_memory_link_new(ctx1);
+    sc_addr link2 = sc_memory_link_new(ctx2);
+    sc_stream * stream = 0;
+
+    r = sc_memory_set_link_content(ctx2, link1, stream2);
+    g_assert(r == SC_RESULT_ERROR_NO_WRITE_RIGHTS);
+
+    r = sc_memory_set_link_content(ctx1, link1, stream1);
+    g_assert(r == SC_RESULT_OK);
+
+    r = sc_memory_set_link_content(ctx1, link2, stream2);
+    g_assert(r == SC_RESULT_OK);
+
+    r = sc_memory_get_link_content(ctx1, link2, &stream);
+    g_assert(r == SC_RESULT_OK && stream);
+    sc_stream_free(stream);
+
+    r = sc_memory_get_link_content(ctx2, link1, &stream);
+    g_assert(r == SC_RESULT_ERROR_NO_READ_RIGHTS);
+
+    sc_stream * stream3 = sc_stream_memory_new(data, strlen(data), SC_STREAM_READ, SC_FALSE);
+    sc_addr * result = 0;
     sc_uint32 count = 0;
+    r = sc_memory_find_links_with_content(ctx1, stream3, &result, &count);
+    g_assert(r == SC_RESULT_OK && (count == 2));
+    g_assert((SC_ADDR_IS_EQUAL(result[0], link1) && SC_ADDR_IS_EQUAL(result[1], link2)) ||
+            (SC_ADDR_IS_EQUAL(result[1], link1) && SC_ADDR_IS_EQUAL(result[0], link2)));
 
-    printf("Element size: %d bytes\n", (int)sizeof(sc_element));
-    printf("Segment size: %d elements\n", (int)SC_SEGMENT_ELEMENTS_COUNT);
+    r = sc_memory_find_links_with_content(ctx2, stream3, &result, &count);
+    g_assert(r == SC_RESULT_OK && (count == 1) && (SC_ADDR_IS_EQUAL(result[0], link2)));
 
-    timer = g_timer_new();
-    print_storage_statistics();
-    printf("--- Node creation ---\n");
-    g_timer_start(timer);
-    for (idx = 0; idx < nodes_append_count; idx++)
-        id = sc_memory_node_new(s_default_ctx, sc_type_const);
 
-    g_timer_stop(timer);
-    printf("Time: %f s\n", (float)g_timer_elapsed(timer, 0));
-    printf("Nodes per second: %f\n", (float)nodes_append_count / g_timer_elapsed(timer, 0));
-    printf("Segments count: %d\n", sc_storage_get_segments_count());
-    print_storage_statistics();
+    // arcs
+    sc_addr arc1 = sc_memory_arc_new(ctx1, 0, addr1, link1);
+    sc_addr arc2 = sc_memory_arc_new(ctx2, 0, addr2, link2);
 
-    g_timer_reset(timer);
-    printf("--- Node segmentation ---\n");
-    count = 0;
+    sc_addr el_addr;
 
-    printf("Prepare test...\n");
-    for (idx = 1; idx < nodes_remove_count + 1; idx++)
+    r = sc_memory_get_arc_begin(ctx1, arc1, &el_addr);
+    g_assert(r == SC_RESULT_OK && SC_ADDR_IS_EQUAL(el_addr, addr1));
+
+    r = sc_memory_get_arc_end(ctx1, arc2, &el_addr);
+    g_assert(r == SC_RESULT_OK && SC_ADDR_IS_EQUAL(el_addr, link2));
+
+    r = sc_memory_get_arc_end(ctx2, arc1, &el_addr);
+    g_assert(r == SC_RESULT_ERROR_NO_READ_RIGHTS);
+
+    r = sc_memory_get_arc_begin(ctx2, arc1, &el_addr);
+    g_assert(r == SC_RESULT_ERROR_NO_READ_RIGHTS);
+
+    // deletion
+    sc_addr arc3 = sc_memory_arc_new(ctx1, 0, addr2, link1);
+
+    r = sc_memory_element_free(ctx2, addr2);
+    g_assert(r == SC_RESULT_ERROR_NO_WRITE_RIGHTS);
+
+    r = sc_memory_element_free(ctx1, addr2);
+    g_assert(r == SC_RESULT_OK);
+
+    g_assert(!sc_memory_is_element(ctx2, arc3));
+
+    // iterators
+    addr1 = sc_memory_node_new(ctx2, 0);
+    addr2 = sc_memory_node_new(ctx2, 0);
+    el_addr = sc_memory_node_new(ctx1, 0);
+
+    arc1 = sc_memory_arc_new(ctx2, sc_type_arc_pos_const_perm, addr1, addr2);
+    arc2 = sc_memory_arc_new(ctx1, sc_type_arc_pos_const_perm, el_addr, arc1);
+
+    sc_iterator3 *it3 = sc_iterator3_a_a_f_new(ctx2, 0, 0, addr2);
+    g_assert(it3 != 0);
+    g_assert(sc_iterator3_next(it3) == SC_TRUE);
+    g_assert(SC_ADDR_IS_EQUAL(sc_iterator3_value(it3, 0), addr1));
+    g_assert(SC_ADDR_IS_EQUAL(sc_iterator3_value(it3, 1), arc1));
+    g_assert(sc_iterator3_next(it3) == SC_FALSE);
+    sc_iterator3_free(it3);
+
+    it3 = sc_iterator3_f_a_a_new(ctx1, addr1, 0, 0);
+    g_assert(it3 != 0);
+    g_assert(sc_iterator3_next(it3) == SC_TRUE);
+    g_assert(SC_ADDR_IS_EQUAL(sc_iterator3_value(it3, 1), arc1));
+    g_assert(SC_ADDR_IS_EQUAL(sc_iterator3_value(it3, 2), addr2));
+    g_assert(sc_iterator3_next(it3) == SC_FALSE);
+    sc_iterator3_free(it3);
+
+    it3 = sc_iterator3_f_a_f_new(ctx1, addr1, 0, addr2);
+    g_assert(it3 != 0);
+    g_assert(sc_iterator3_next(it3) == SC_TRUE);
+    g_assert(SC_ADDR_IS_EQUAL(sc_iterator3_value(it3, 1), arc1));
+    g_assert(sc_iterator3_next(it3) == SC_FALSE);
+    sc_iterator3_free(it3);
+
+    it3 = sc_iterator3_f_a_a_new(ctx2, el_addr, 0, 0);
+    g_assert(it3 == 0);
+
+    it3 = sc_iterator3_f_a_a_new(ctx1, el_addr, 0, 0);
+    g_assert(it3 != 0);
+    g_assert(sc_iterator3_next(it3) == SC_TRUE);
+    g_assert(SC_ADDR_IS_EQUAL(sc_iterator3_value(it3, 1), arc2));
+    g_assert(SC_ADDR_IS_EQUAL(sc_iterator3_value(it3, 2), arc1));
+    g_assert(sc_iterator3_next(it3) == SC_FALSE);
+    sc_iterator3_free(it3);
+
+    it3 = sc_iterator3_a_a_f_new(ctx2, 0, 0, arc1);
+    g_assert(it3 != 0);
+    g_assert(sc_iterator3_next(it3) == SC_FALSE);
+    sc_iterator3_free(it3);
+
+    sc_iterator5 *it5 = sc_iterator5_a_a_f_a_a_new(ctx2, 0, 0, addr2, 0, 0);
+    g_assert(it5 != 0);
+    g_assert(sc_iterator5_next(it5) == SC_FALSE);
+    sc_iterator5_free(it5);
+
+    it5 = sc_iterator5_a_a_f_a_a_new(ctx1, 0, 0, addr2, 0, 0);
+    g_assert(it5 != 0);
+    g_assert(sc_iterator5_next(it5) == SC_TRUE);
+    g_assert(SC_ADDR_IS_EQUAL(sc_iterator5_value(it5, 0), addr1));
+    g_assert(SC_ADDR_IS_EQUAL(sc_iterator5_value(it5, 1), arc1));
+    g_assert(SC_ADDR_IS_EQUAL(sc_iterator5_value(it5, 3), arc2));
+    g_assert(SC_ADDR_IS_EQUAL(sc_iterator5_value(it5, 4), el_addr));
+    g_assert(sc_iterator5_next(it5) == SC_FALSE);
+    sc_iterator5_free(it5);
+
+    it5 = sc_iterator5_a_a_f_a_f_new(ctx2, 0, 0, addr2, 0, el_addr);
+    g_assert(sc_iterator5_next(it5) == SC_FALSE);
+    sc_iterator5_free(it5);
+
+    it5 = sc_iterator5_a_a_f_a_f_new(ctx1, 0, 0, addr2, 0, el_addr);
+    g_assert(sc_iterator5_next(it5) == SC_TRUE);
+    g_assert(SC_ADDR_IS_EQUAL(sc_iterator5_value(it5, 0), addr1));
+    g_assert(SC_ADDR_IS_EQUAL(sc_iterator5_value(it5, 1), arc1));
+    g_assert(SC_ADDR_IS_EQUAL(sc_iterator5_value(it5, 3), arc2));
+    g_assert(sc_iterator5_next(it5) == SC_FALSE);
+    sc_iterator5_free(it5);
+
+    /// @todo add test for access levels in events
+
+    sc_memory_context_free(ctx1);
+    sc_memory_context_free(ctx2);
+
+    shutdown_memory();
+}
+
+void test_deletion()
+{
+    initialize_memory();
+
+    sc_memory_context *ctx = sc_memory_context_new(sc_access_lvl_make_max);
+
+    // dest deletion of elements in iterator range (not current position of iterator)
     {
-        if (idx % 10 < 5)
+        sc_addr node = sc_memory_node_new(ctx, 0);
+
+        sc_addr arcs[5], nodes[5];
+
+        for (sc_uint32 i = 0; i < 5; ++i)
         {
-            id.seg = idx / SC_SEGMENT_ELEMENTS_COUNT;
-            id.offset = idx % SC_SEGMENT_ELEMENTS_COUNT;
-            /*do
-      {
-    id = get_random_addr(sc_type_node);
-      }
-      while(!sc_storage_is_element(id) && is_sc_addr_in_segment_node_vector(id));*/
-            if (sc_memory_is_element(s_default_ctx, id))
-                segment_node_del.push_back(id);
+            nodes[i] = sc_memory_node_new(ctx, 0);
+            arcs[i] = sc_memory_arc_new(ctx, sc_type_arc_pos_const_perm, node, nodes[i]);
         }
-    }
 
-    printf("Run test...\n");
-    g_timer_start(timer);
-
-    sc_uint32 n = segment_node_del.size();
-    for (sc_uint32 i = 0; i < n; ++i)
-        sc_memory_element_free(s_default_ctx, segment_node_del[i]);
-
-    n = nodes_remove_count - n;
-    for (sc_uint32 i = 0; i < n; i++)
-        sc_memory_node_new(s_default_ctx, 0);
-
-    g_timer_stop(timer);
-
-    segment_node_del.clear();
-
-    printf("Time: %f s\n", g_timer_elapsed(timer, 0));
-    printf("Elements per second: %f\n", (float)nodes_remove_count / g_timer_elapsed(timer, 0));
-    printf("Segments count: %d\n", sc_storage_get_segments_count());
-    printf("Element free calls: %u\n", (unsigned int)segment_node_del.size());
-    print_storage_statistics();
-
-
-    g_timer_reset(timer);
-    printf("--- Arcs creation ---\n");
-    count = 0;
-
-    printf("Prepare...\n");
-    for (idx = 0; idx < arcs_append_count; idx++)
-    {
-        do
-        {
-            id = get_random_addr(0);
-        }while (!sc_memory_is_element(s_default_ctx, id));
-
-        do
-        {
-            id2 = get_random_addr(0);
-        }while (!sc_memory_is_element(s_default_ctx, id2));
-
-        arc_creation_vector.push_back(id);
-        arc_creation_vector.push_back(id2);
-    }
-
-    printf("Run...\n");
-    g_timer_start(timer);
-    n = arc_creation_vector.size() / 2;
-    for (sc_uint32 i = 0; i < n; ++i)
-        sc_memory_arc_new(s_default_ctx, sc_type_arc_common, arc_creation_vector[i], arc_creation_vector[i + n]);
-
-    g_timer_stop(timer);
-    printf("Timer: %fs\n", g_timer_elapsed(timer, 0));
-    printf("Arcs per second: %f\n", (float)n / g_timer_elapsed(timer, 0));
-    printf("Segments count: %d\n", sc_storage_get_segments_count());
-
-    print_storage_statistics();
-
-    g_timer_destroy(timer);
-}
-
-void test2()
-{
-    sc_uint passed = 0;
-    sc_uint idx = 0;
-    sc_uint32 packed;
-    sc_uint32 test_count = 10000000;
-    sc_addr addr, addr2;
-
-    printf("Test sc-addr packing\n");
-    passed = 0;
-
-    timer = g_timer_new();
-
-    g_timer_reset(timer);
-    g_timer_start(timer);
-
-    for (idx = 0; idx < test_count; idx++)
-    {
-        // make random addr
-        addr.seg = g_random_int() % SC_ADDR_SEG_MAX;
-        addr.offset = g_random_int() % SC_ADDR_OFFSET_MAX;
-
-        // pack
-        packed = SC_ADDR_LOCAL_TO_INT(addr);
-
-        // unpack
-        addr2.seg = SC_ADDR_LOCAL_SEG_FROM_INT(packed);
-        addr2.offset = SC_ADDR_LOCAL_OFFSET_FROM_INT(packed);
-
-        if (SC_ADDR_IS_NOT_EQUAL(addr, addr2))
-        {
-            printf("Error!\n");
-            printf("Source seg=%d, offset=%d\n", addr.seg, addr.offset);
-            printf("Packed=%d\n", packed);
-            printf("Unpacked seg=%d, offset=%d", addr2.seg, addr2.offset);
-        }else
-            passed++;
-    }
-
-    g_timer_stop(timer);
-
-    printf("Passed %d of %d tests\n", passed, idx);
-    printf("Pack/Unpack operations per second: %f", test_count / g_timer_elapsed(timer, 0));
-
-    g_timer_destroy(timer);
-}
-
-void test3()
-{
-    sc_addr node[10], arc[10][10];
-    sc_uint32 i, j;
-
-    printf("Create 10 nodes and 100 arcs, that connect nodes each other\n");
-    for (i = 0; i < 10; i++)
-        node[i] = sc_memory_node_new(s_default_ctx, sc_type_const);
-
-    for (i = 0; i < 10; i++)
-        for (j = 0; j < 10; j++)
-            arc[i][j] = sc_memory_arc_new(s_default_ctx, 0, node[i], node[j]);
-
-    printf("Segments count: %d\n", sc_storage_get_segments_count());
-    print_storage_statistics();
-
-    printf("Delete 5 nodes\n");
-    for (i = 0; i < 5; i++)
-        sc_memory_element_free(s_default_ctx, node[i]);
-
-    printf("Segments count: %d\n", sc_storage_get_segments_count());
-    print_storage_statistics();
-}
-
-void test4()
-{
-    sc_addr node[10], arc[10][10];
-    sc_uint32 i, j;
-    sc_iterator3 *it = 0;
-    sc_addr addr1, addr2, addr3;
-
-    printf("Create 10 nodes and 100 arcs, that connect nodes each other\n");
-    for (i = 0; i < 10; i++)
-        node[i] = sc_memory_node_new(s_default_ctx, sc_type_const);
-
-    for (i = 0; i < 10; i++)
-        for (j = 0; j < 10; j++)
-            arc[i][j] = sc_memory_arc_new(s_default_ctx, 0, node[i], node[j]);
-
-    print_storage_statistics();
-    printf("---\nTest iterator3_f_a_a\n");
-    for (i = 0; i < 10; i++)
-    {
-        it = sc_iterator3_f_a_a_new(node[i], 0, 0);
-        g_assert(it != 0);
-
-        printf("Node %d:\n", i);
+        sc_iterator3 *it = sc_iterator3_f_a_a_new(ctx,
+                                                  node,
+                                                  sc_type_arc_pos_const_perm,
+                                                  sc_type_node);
+        /// @todo reqrite test to don't depend on order of iterator results.
+        /// Now memory stores arcs in reverse to creation order
+        sc_uint32 i = 5;
         while (sc_iterator3_next(it))
         {
-            addr1 = sc_iterator3_value(it, 0);
-            addr2 = sc_iterator3_value(it, 1);
-            addr3 = sc_iterator3_value(it, 2);
-
-            printf("\t%u, %u; %u, %u; %u, %u\n", addr1.seg, addr1.offset, addr2.seg, addr2.offset, addr3.seg, addr3.offset);
+            --i;
+            g_assert(SC_ADDR_IS_EQUAL(nodes[i], sc_iterator3_value(it, 2)));
         }
+        g_assert(i == 0);
 
         sc_iterator3_free(it);
-    }
 
-    printf("---\nTest iterator3_a_a_f\n");
-    for (i = 0; i < 10; i++)
-    {
-        it = sc_iterator3_a_a_f_new(0, 0, node[i]);
-        g_assert(it != 0);
-
-        printf("Node %d:\n", i);
+        // delete on of arcs, and check iterator
+        sc_memory_element_free(ctx, nodes[1]);
+        i = 5;
+        it = sc_iterator3_f_a_a_new(ctx,
+                                    node,
+                                    sc_type_arc_pos_const_perm,
+                                    sc_type_node);
         while (sc_iterator3_next(it))
         {
-            addr1 = sc_iterator3_value(it, 0);
-            addr2 = sc_iterator3_value(it, 1);
-            addr3 = sc_iterator3_value(it, 2);
+            i--;
+            if (i == 1)
+                i--;
+            g_assert(SC_ADDR_IS_EQUAL(nodes[i], sc_iterator3_value(it, 2)));
+        }
+        g_assert(i == 0);
+    }
 
-            printf("\t%u, %u; %u, %u; %u, %u\n", addr1.seg, addr1.offset, addr2.seg, addr2.offset, addr3.seg, addr3.offset);
+    // test deletion of currently pointed iterator elements
+    {
+        sc_addr node = sc_memory_node_new(ctx, 0);
+        sc_addr nodes[5];
+
+        for (sc_uint32 i = 0; i < 5; ++i)
+        {
+            nodes[i] = sc_memory_node_new(ctx, 0);
+            sc_memory_arc_new(ctx, sc_type_arc_pos_const_perm, node, nodes[i]);
         }
 
+        // remove arc that used in iteration
+        sc_iterator3 *it = sc_iterator3_f_a_a_new(ctx,
+                                                  node,
+                                                  sc_type_arc_pos_const_perm,
+                                                  sc_type_node);
+
+        g_assert(sc_iterator3_next(it) == SC_TRUE);
+        g_assert(SC_ADDR_IS_EQUAL(sc_iterator3_value(it, 2), nodes[4]));
+        g_assert(sc_iterator3_next(it) == SC_TRUE);
+        g_assert(SC_ADDR_IS_EQUAL(sc_iterator3_value(it, 2), nodes[3]));
+
+        g_assert(sc_memory_element_free(ctx, sc_iterator3_value(it, 2)) == SC_RESULT_OK);
+        g_assert(sc_iterator3_next(it) == SC_TRUE);
+        g_assert(SC_ADDR_IS_EQUAL(sc_iterator3_value(it, 2), nodes[2]));
+        g_assert(sc_iterator3_next(it) == SC_TRUE);
+        g_assert(SC_ADDR_IS_EQUAL(sc_iterator3_value(it, 2), nodes[1]));
+        g_assert(sc_iterator3_next(it) == SC_TRUE);
+        g_assert(SC_ADDR_IS_EQUAL(sc_iterator3_value(it, 2), nodes[0]));
+        g_assert(sc_iterator3_next(it) == SC_FALSE);
+
         sc_iterator3_free(it);
-    }
 
-    printf("---\nTest iterator3_f_a_f\n");
-    for (i = 0; i < 10; i++)
-    {
-        it = sc_iterator3_f_a_f_new(node[i], 0, node[9 - i]);
-        g_assert(it != 0);
-
-        printf("Node %d:\n", i);
-        while (sc_iterator3_next(it))
+        node = sc_memory_node_new(ctx, 0);
+        for (sc_uint32 i = 0; i < 5; ++i)
         {
-            addr1 = sc_iterator3_value(it, 0);
-            addr2 = sc_iterator3_value(it, 1);
-            addr3 = sc_iterator3_value(it, 2);
-
-            printf("\t%u, %u; %u, %u; %u, %u\n", addr1.seg, addr1.offset, addr2.seg, addr2.offset, addr3.seg, addr3.offset);
+            nodes[i] = sc_memory_node_new(ctx, 0);
+            sc_memory_arc_new(ctx, sc_type_arc_pos_const_perm, nodes[i], node);
         }
 
+        it = sc_iterator3_a_a_f_new(ctx,
+                                    sc_type_node,
+                                    sc_type_arc_pos_const_perm,
+                                    node);
+
+        g_assert(sc_iterator3_next(it) == SC_TRUE);
+        g_assert(SC_ADDR_IS_EQUAL(sc_iterator3_value(it, 0), nodes[4]));
+        g_assert(sc_memory_element_free(ctx, sc_iterator3_value(it, 0)) == SC_RESULT_OK);
+        g_assert(sc_memory_element_free(ctx, nodes[0]) == SC_RESULT_OK);
+
+        g_assert(sc_iterator3_next(it) == SC_TRUE);
+        g_assert(SC_ADDR_IS_EQUAL(sc_iterator3_value(it, 0), nodes[3]));
+        g_assert(sc_iterator3_next(it) == SC_TRUE);
+        g_assert(SC_ADDR_IS_EQUAL(sc_iterator3_value(it, 0), nodes[2]));
+        g_assert(sc_iterator3_next(it) == SC_TRUE);
+        g_assert(SC_ADDR_IS_EQUAL(sc_iterator3_value(it, 0), nodes[1]));
+        g_assert(sc_iterator3_next(it) == SC_FALSE);
+
         sc_iterator3_free(it);
-    }
 
-    // iterator allocations
-    printf("---\nTest iterator allocation(dealocation) speed...\n");
-
-    timer = g_timer_new();
-
-    g_timer_reset(timer);
-    g_timer_start(timer);
-
-    for (i = 0; i < iterator_alloc_count; i++)
-    {
-        it = sc_iterator3_f_a_a_new(node[0], 0, 0);
-        sc_iterator3_free(it);
-    }
-
-    g_timer_stop(timer);
-    printf("Allocated iterators: %d\n", iterator_alloc_count);
-    printf("Allocation/deallocation per second: %f\n", iterator_alloc_count / g_timer_elapsed(timer, 0));
-
-    g_timer_destroy(timer);
-
-}
-
-void test5()
-{
-    sc_uint32 i;
-    sc_addr addr;
-    sc_stream *stream = 0;
-
-    printf("Segments count: %d\n", sc_storage_get_segments_count());
-    print_storage_statistics();
-
-    timer = g_timer_new();
-
-    printf("Create %d links\n", link_append_count);
-
-    //g_snprintf(test, 1024, "../CMakeLists.txt");
-    g_timer_reset(timer);
-    g_timer_start(timer);
-    for (i = 0; i < link_append_count; i++)
-    {
-        addr = sc_memory_link_new(s_default_ctx);
-
-        //printf("Created sc-link: seg=%d, offset=%d, content=%d\n", addr.seg, addr.offset, i);
-
-        stream = sc_stream_memory_new((char*)&i, sizeof(i), SC_STREAM_READ, SC_FALSE);
-        sc_memory_set_link_content(s_default_ctx, addr, stream);
-        sc_stream_free(stream);
-    }
-
-    g_timer_stop(timer);
-
-    printf("Created links: %d\n", link_append_count);
-    printf("Links per second: %f\n", link_append_count / g_timer_elapsed(timer, 0));
-
-    printf("Segments count: %d\n", sc_storage_get_segments_count());
-    print_storage_statistics();
-
-    g_timer_destroy(timer);
-}
-
-
-void test6()
-{
-    sc_uint32 i, j;
-    sc_addr addr;
-    sc_stream *stream = 0;
-    sc_addr *results = 0;
-    sc_uint32 results_count = 0;
-
-    printf("Segments count: %d\n", sc_storage_get_segments_count());
-    print_storage_statistics();
-
-    timer = g_timer_new();
-
-    //g_snprintf(test, 1024, "../CMakeLists.txt");
-    g_timer_reset(timer);
-    g_timer_start(timer);
-
-    for (i = 0; i < link_append_count; i++)
-    {
-        //addr = sc_storage_link_new();
-       // printf("Find addrs for content %d\t", i);
-
-        stream = sc_stream_memory_new((char*)&i, sizeof(i), SC_STREAM_READ, SC_FALSE);
-
-        if (sc_memory_find_links_with_content(s_default_ctx, stream, &results, &results_count) == SC_RESULT_OK)
+        // remove source node
+        node = sc_memory_node_new(ctx, 0);
+        for (sc_uint32 i = 0; i < 5; ++i)
         {
-//            printf("found: \n");
-//            for (j = 0; j < results_count; j++)
-//            {
-//                sc_stream *stream_value= 0;
-//                sc_memory_get_link_content(results[j], &stream_value);
-//                sc_uint32 value, bytes;
-//                sc_stream_read_data(stream_value, (char*)&value, sizeof(value), &bytes);
+            nodes[i] = sc_memory_node_new(ctx, 0);
+            sc_memory_arc_new(ctx, sc_type_arc_pos_const_perm, node, nodes[i]);
+        }
 
-//                sc_stream_free(stream_value);
+        it = sc_iterator3_f_a_a_new(ctx,
+                                    node,
+                                    sc_type_arc_pos_const_perm,
+                                    0);
 
-//                printf("seg=%d, offset=%d, value=%d\n", results[j].seg, results[j].offset, value);
-//            }
-            g_free(results);
-            results = 0;
-        }else
-            printf("error\n");
+        g_assert(sc_memory_element_free(ctx, node) == SC_RESULT_OK);
+        g_assert(sc_iterator3_next(it) == SC_FALSE);
+
+        sc_iterator3_free(it);
+    }
+
+    // iterator 5
+    {
+        sc_addr node = sc_memory_node_new(ctx, 0);
+        sc_addr n1[3], n2[3];
+
+        for (sc_uint32 i = 0; i < 3; ++i)
+        {
+            n1[i] = sc_memory_node_new(ctx, 0);
+            n2[i] = sc_memory_node_new(ctx, 0);
+
+            sc_addr a = sc_memory_arc_new(ctx, sc_type_arc_pos_const_perm, node, n1[i]);
+            sc_memory_arc_new(ctx, sc_type_arc_pos_const_perm, n2[i], a);
+        }
+
+        sc_iterator5 *it = sc_iterator5_f_a_a_a_a_new(ctx, node, 0, 0, 0, 0);
+
+        g_assert(sc_iterator5_next(it) == SC_TRUE);
+        g_assert(SC_ADDR_IS_EQUAL(sc_iterator5_value(it, 2), n1[2]));
+        g_assert(SC_ADDR_IS_EQUAL(sc_iterator5_value(it, 4), n2[2]));
+
+        g_assert(sc_memory_element_free(ctx, n1[1]) == SC_RESULT_OK);
+        g_assert(sc_iterator5_next(it) == SC_TRUE);
+        g_assert(SC_ADDR_IS_EQUAL(sc_iterator5_value(it, 2), n1[0]));
+        g_assert(SC_ADDR_IS_EQUAL(sc_iterator5_value(it, 4), n2[0]));
+        g_assert(sc_iterator5_next(it) == SC_FALSE);
+
+        sc_iterator5_free(it);
+    }
+
+    // links
+    {
+        sc_addr link = sc_memory_link_new(ctx);
+
+        char const *data = "test content";
+        sc_stream *stream = sc_stream_memory_new(data, strlen(data), SC_STREAM_READ, SC_FALSE);
+        g_assert(sc_memory_set_link_content(ctx, link, stream) == SC_RESULT_OK);
+
+        sc_addr *results = 0;
+        sc_uint32 count = 0;
+        g_assert(sc_memory_find_links_with_content(ctx, stream, &results, &count) == SC_RESULT_OK);
+        g_assert(count == 1);
+        g_assert(SC_ADDR_IS_EQUAL(link, results[0]));
+
+        g_assert(sc_memory_element_free(ctx, link) == SC_RESULT_OK);
+        g_assert(sc_memory_find_links_with_content(ctx, stream, &results, &count) == SC_RESULT_ERROR_NOT_FOUND);
+        g_assert(count == 0);
 
         sc_stream_free(stream);
     }
 
-    g_timer_stop(timer);
-
-    printf("Created links: %d\n", link_append_count);
-    printf("Links per second: %f\n", link_append_count / g_timer_elapsed(timer, 0));
-
-    printf("Segments count: %d\n", sc_storage_get_segments_count());
-    print_storage_statistics();
-
-    g_timer_destroy(timer);
+    sc_memory_context_free(ctx);
+    shutdown_memory();
 }
 
-sc_result event_callback(const sc_event *event, sc_addr arg)
+void test_states()
 {
-    printf("Event type: ");
-    switch (sc_event_get_type(event))
-    {
-    case SC_EVENT_ADD_INPUT_ARC:
-        printf("Add intput arc");
-        break;
+    initialize_memory();
+    sc_memory_context *ctx = sc_memory_context_new(sc_access_lvl_make_max);
 
-    case SC_EVENT_ADD_OUTPUT_ARC:
-        printf("Add output arc");
-        break;
+    sc_addr n1 = sc_memory_node_new(ctx, 0);
+    sc_addr n2 = sc_memory_node_new(ctx, 0);
+    sc_addr a = sc_memory_arc_new(ctx, sc_type_arc_pos_const_perm, n1, n2);
 
-    case SC_EVENT_REMOVE_INPUT_ARC:
-        printf("Remove input arc");
-        break;
+    g_assert(SC_ADDR_IS_NOT_EMPTY(a));
+    g_assert(sc_memory_element_free(ctx, n1));
+    a = sc_memory_arc_new(ctx, sc_type_arc_pos_const_perm, n1, n2);
+    g_assert(SC_ADDR_IS_EMPTY(a));
 
-    case SC_EVENT_REMOVE_OUTPUT_ARC:
-        printf("Remove output arc");
-        break;
-
-//    case SC_EVENT_CHANGE_LINK_CONTENT:
-//        printf("Change link content");
-//        break;
-    }
-    printf(", Id: %d", sc_event_get_id(event));
-    printf(", Argument = seg: %d, offset: %d\n", arg.seg, arg.offset);
-    return SC_RESULT_OK;
+    sc_memory_context_free(ctx);
+    shutdown_memory();
 }
 
-void test7()
+sc_bool test_stream_equal(sc_stream const *s1, sc_stream const *s2)
 {
-    sc_uint32 i, j;
-    sc_addr addr, addr1, addr2;
-    sc_addr new_addr;
-    sc_event *event1, *event2, *event3, *event4;
+    sc_uint32 l1, l2;
+    g_assert(sc_stream_get_length(s1, &l1) == SC_RESULT_OK);
+    g_assert(sc_stream_get_length(s2, &l2) == SC_RESULT_OK);
 
-    printf("Segments count: %d\n", sc_storage_get_segments_count());
-    print_storage_statistics();
+    if (l1 != l2)
+        return SC_FALSE;
 
-    timer = g_timer_new();
-
-    g_timer_reset(timer);
-    g_timer_start(timer);
-
-    addr = sc_memory_node_new(s_default_ctx, 0);
-    addr1 = sc_memory_node_new(s_default_ctx, 0);
-    printf("Register events\n");
-    event1 = sc_event_new(addr, SC_EVENT_ADD_OUTPUT_ARC, 0, &event_callback, 0);
-    event2 = sc_event_new(addr1, SC_EVENT_ADD_INPUT_ARC, 1, &event_callback, 0);
-    event3 = sc_event_new(addr, SC_EVENT_REMOVE_OUTPUT_ARC, 2, &event_callback, 0);
-    event4 = sc_event_new(addr1, SC_EVENT_REMOVE_INPUT_ARC, 3, &event_callback, 0);
-
-    //addr2 = sc_memory_arc_new(0, addr, addr1);
-
-    for (int i = 0; i < 10; ++i)
+    sc_uint32 i, read;
+    char b1, b2;
+    sc_bool res = SC_TRUE;
+    for (i = 0; i < l1; ++i)
     {
-        addr1 = sc_memory_node_new(s_default_ctx, 0);
-        addr2 = sc_memory_arc_new(s_default_ctx, 0, addr, addr1);
+        g_assert(sc_stream_read_data(s1, &b1, 1, &read) == SC_RESULT_OK);
+        g_assert(sc_stream_read_data(s2, &b2, 1, &read) == SC_RESULT_OK);
+        if (b1 != b2)
+        {
+            res = SC_FALSE;
+            break;
+        }
     }
-    //sc_memory_element_free(addr2);
-    g_usleep(10000);
 
-
-    printf("Unregister events\n");
-    //sc_event_destroy(event1);
-    sc_event_destroy(event2);
-    //sc_event_destroy(event3);
-    sc_event_destroy(event4);
-
-    addr2 = sc_memory_arc_new(s_default_ctx, 0, addr, addr1);
-    sc_memory_element_free(s_default_ctx, addr2);
-
-    g_timer_stop(timer);
-
-    printf("Segments count: %d\n", sc_storage_get_segments_count());
-    print_storage_statistics();
-
-    g_timer_destroy(timer);
+    return res;
 }
 
-void test8()
+void test_links()
 {
-    sc_addr node[10], arc[10][10], addr_arc;
-    sc_uint32 i, j;
-    sc_iterator3 *it = 0;
+    initialize_memory();
+    sc_memory_context *ctx = sc_memory_context_new(sc_access_lvl_make_max);
 
-    printf("Segments count: %d\n", sc_storage_get_segments_count());
-    print_storage_statistics();
-
-    timer = g_timer_new();
-
-    printf("Create 10 nodes and 100 arcs, that connect nodes each other\n");
-    for (i = 0; i < 10; i++)
-        node[i] = sc_memory_node_new(s_default_ctx, sc_type_node);
-
-    for (i = 0; i < 10; i++)
-        for (j = 0; j < 10; j++)
-            arc[i][j] = sc_memory_arc_new(s_default_ctx, 0, node[i], node[j]);
-
-    printf("Segments count: %d\n", sc_storage_get_segments_count());
-    print_storage_statistics();
-
-    printf("Delete 5 nodes\n");
-    for (i = 0; i < 5; i++)
-        sc_memory_element_free(s_default_ctx, node[i]);
-
-    // iterate element for check
-    it = sc_iterator3_f_a_a_new(node[9], 0, 0);
-    while (sc_iterator3_next(it) == SC_TRUE)
+    // check change of content
     {
-        addr_arc = sc_iterator3_value(it, 1);
-        printf("Arc: %d, %d\n", addr_arc.seg, addr_arc.offset);
+        char const *data = "test content";
+        sc_stream *stream = sc_stream_memory_new(data, strlen(data), SC_STREAM_READ, SC_FALSE);
+        char const *data2 = "test content 2";
+        sc_stream *stream2 = sc_stream_memory_new(data2, strlen(data2), SC_STREAM_READ, SC_FALSE);
+
+        sc_addr link = sc_memory_link_new(ctx);
+        g_assert(sc_memory_set_link_content(ctx, link, stream) == SC_RESULT_OK);
+        g_assert(sc_memory_set_link_content(ctx, link, stream2) == SC_RESULT_OK);
+
+        sc_addr *result;
+        sc_uint32 count;
+        g_assert(sc_memory_find_links_with_content(ctx, stream, &result, &count) == SC_RESULT_ERROR_NOT_FOUND);
+        g_assert(count == 0);
+
+        g_assert(sc_memory_find_links_with_content(ctx, stream2, &result, &count) == SC_RESULT_OK);
+        g_assert(count == 1);
+
+        sc_stream *rstream;
+        g_assert(sc_memory_get_link_content(ctx, link, &rstream) == SC_RESULT_OK);
+        g_assert(rstream != nullptr);
+        g_assert(test_stream_equal(stream2, rstream) == SC_TRUE);
+
+        sc_stream_free(stream);
+        sc_stream_free(stream2);
     }
-    sc_iterator3_free(it);
 
-    printf("Segments count: %d\n", sc_storage_get_segments_count());
-    print_storage_statistics();
-
-    g_timer_stop(timer);
-
-    printf("Collect and delete garbage...\n");
-    g_timer_reset(timer);
-    g_timer_start(timer);
-
-    sc_storage_update_segments();
-
-    g_timer_stop(timer);
-
-    // iterate element for check
-    it = sc_iterator3_f_a_a_new(node[9], 0, 0);
-    while (sc_iterator3_next(it) == SC_TRUE)
+    // test links store in memory
     {
-        addr_arc = sc_iterator3_value(it, 1);
-        printf("Arc: %d, %d\n", addr_arc.seg, addr_arc.offset);
+        char const *data = "short content";
+        char const *data2 = "very large content, that will be store in file memory";
+
+        g_assert(strlen(data) < SC_CHECKSUM_LEN);
+        g_assert(strlen(data2) >= SC_CHECKSUM_LEN);
+
+        sc_addr link1 = sc_memory_link_new(ctx);
+        sc_addr link2 = sc_memory_link_new(ctx);
+
+        sc_stream *stream1 = sc_stream_memory_new(data, strlen(data), SC_STREAM_READ, SC_FALSE);
+        sc_stream *stream2 = sc_stream_memory_new(data2, strlen(data2), SC_STREAM_READ, SC_FALSE);
+
+        g_assert(sc_memory_set_link_content(ctx, link1, stream1) == SC_RESULT_OK);
+        g_assert(sc_memory_set_link_content(ctx, link2, stream2) == SC_RESULT_OK);
+
+        sc_stream *s1 = 0, *s2 = 0;
+        g_assert(sc_memory_get_link_content(ctx, link1, &s1) == SC_RESULT_OK);
+        g_assert(sc_memory_get_link_content(ctx, link2, &s2) == SC_RESULT_OK);
+
+        g_assert(test_stream_equal(s1, stream1) == SC_TRUE);
+        g_assert(test_stream_equal(s2, stream2) == SC_TRUE);
+
+        sc_stream_free(s1);
+        sc_stream_free(s2);
+
+        g_assert(sc_stream_seek(stream1, SC_STREAM_SEEK_SET, 0) == SC_RESULT_OK);
+        g_assert(sc_stream_seek(stream2, SC_STREAM_SEEK_SET, 0) == SC_RESULT_OK);
+
+        // find links
+        sc_addr *result;
+        sc_uint32 count;
+        g_assert(sc_memory_find_links_with_content(ctx, stream1, &result, &count) == SC_RESULT_OK);
+        g_assert(count == 1);
+        g_assert(SC_ADDR_IS_EQUAL(result[0], link1));
+
+        g_assert(sc_memory_find_links_with_content(ctx, stream2, &result, &count) == SC_RESULT_OK);
+        g_assert(count == 1);
+        g_assert(SC_ADDR_IS_EQUAL(result[0], link2));
+
+        g_assert(sc_memory_element_free(ctx, link1));
+        g_assert(sc_memory_element_free(ctx, link2));
+
+        g_assert(sc_memory_find_links_with_content(ctx, stream1, &result, &count) == SC_RESULT_ERROR_NOT_FOUND);
+        g_assert(count == 0);
+
+        g_assert(sc_memory_find_links_with_content(ctx, stream2, &result, &count) == SC_RESULT_ERROR_NOT_FOUND);
+        g_assert(count == 0);
+
+        sc_stream_free(stream1);
+        sc_stream_free(stream2);
     }
-    sc_iterator3_free(it);
 
-    printf("Elapsed time: %f\n", g_timer_elapsed(timer, 0));
-    printf("Segments count: %d\n", sc_storage_get_segments_count());
-    print_storage_statistics();
-
-    g_timer_destroy(timer);
-
+    sc_memory_context_free(ctx);
+    shutdown_memory();
 }
 
-void test9()
-{
-    printf("Segments count: %d\n", sc_storage_get_segments_count());
-    print_storage_statistics();
-
-    timer = g_timer_new();
-
-    printf("Collect and delete garbage...\n");
-    g_timer_reset(timer);
-    g_timer_start(timer);
-
-    sc_storage_update_segments();
-
-    g_timer_stop(timer);
-
-
-
-    printf("Elapsed time: %f\n", g_timer_elapsed(timer, 0));
-    printf("Segments count: %d\n", sc_storage_get_segments_count());
-    print_storage_statistics();
-
-    g_timer_destroy(timer);
-
-}
-
+// ---------------------------
 int main(int argc, char *argv[])
 {
-    sc_uint item = -1;
-
-    fflush(stdout);
-    timer = g_timer_new();
-    g_timer_start(timer);
-
-    printf("MD5: %d\n", (int)g_checksum_type_get_length(G_CHECKSUM_MD5) );
-    printf("SHA1: %d\n", (int)g_checksum_type_get_length(G_CHECKSUM_SHA1) );
-    printf("SHA256: %d\n", (int)g_checksum_type_get_length(G_CHECKSUM_SHA256) );
-    printf("Element size: %d\n", (int)sizeof(sc_element));
-
-    sc_memory_params params;
     sc_memory_params_clear(&params);
 
     params.clear = SC_TRUE;
@@ -628,88 +624,16 @@ int main(int argc, char *argv[])
     params.config_file = "sc-memory.ini";
     params.ext_path = 0;
 
-    s_default_ctx = sc_memory_initialize(&params);
-    g_timer_stop(timer);
-    printf("Segment loading speed: %f seg/sec\n", sc_storage_get_segments_count() / g_timer_elapsed(timer, 0));
+    printf("sc_element: %zd, sc_addr: %zd, sc_arc: %zd, sc_content: %zd", sizeof(sc_element), sizeof(sc_addr), sizeof(sc_arc_info), sizeof(sc_content));
 
-    //test1();
-    //test5();
-    //test6();
+    g_test_init(&argc, &argv, NULL);
+    g_test_add_func("/common/context", test_context);
+    g_test_add_func("/common/access", test_access_levels);
+    g_test_add_func("/common/deletion", test_deletion);
+	g_test_add_func("/common/states", test_states);
+    g_test_add_func("/common/links", test_links);
+    g_test_run();
 
-    test7();
-    //test8();
-    //test3();
-    item = 0;
-
-    while (item != 0)
-    {
-        printf("Commands:\n"
-               "0 - exit\n"
-               "1 - test allocation\n"
-               "2 - test sc-addr utilities\n"
-               "3 - test arc deletion\n"
-               "4 - test iterators\n"
-               "5 - test contents\n"
-               "6 - test content finding\n"
-               "7 - test events\n"
-               "8 - test garbage deletion\n"
-               "9 - run grabage collection\n"
-               "\nCommand: ");
-        scanf("%d", &item);
-
-        printf("\n----- Test %d -----\n", item);
-
-        switch(item)
-        {
-        case 1:
-            test1();
-            break;
-
-        case 2:
-            test2();
-            break;
-
-        case 3:
-            test3();
-            break;
-
-        case 4:
-            test4();
-            break;
-
-        case 5:
-            test5();
-            break;
-
-        case 6:
-            test6();
-            break;
-
-        case 7:
-            test7();
-            break;
-
-        case 8:
-            test8();
-            break;
-
-        case 9:
-            test9();
-            break;
-        };
-
-        printf("\n----- Finished -----\n");
-    }
-
-    timer = g_timer_new();
-    item = sc_storage_get_segments_count();
-    g_timer_reset(timer); // crash when uncomment
-
-    printf("Shutting down memory\n Wait...\n");
-    sc_memory_shutdown();
-    g_timer_stop(timer);
-    printf("Segments save speed: %f seg/sec\n", item / g_timer_elapsed(timer, 0));
-    g_timer_destroy(timer);
 
     return 0;
 }

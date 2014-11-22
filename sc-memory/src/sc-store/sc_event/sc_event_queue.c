@@ -23,6 +23,7 @@ along with OSTIS.  If not, see <http://www.gnu.org/licenses/>.
 #include "sc_event_queue.h"
 #include "sc_event.h"
 #include "sc_event_private.h"
+#include "../sc_memory_private.h"
 
 
 gpointer sc_event_queue_thread_loop(gpointer data)
@@ -40,9 +41,9 @@ gpointer sc_event_queue_thread_loop(gpointer data)
     while (running == SC_TRUE || g_queue_get_length(queue->queue) > 0)
     {
         g_rec_mutex_lock(&queue->mutex);
-
         running = queue->running;
         sc_event_queue_item *item = (sc_event_queue_item*)g_queue_pop_head(queue->queue);
+        g_rec_mutex_unlock(&queue->mutex);
 
         event = 0;
 
@@ -54,22 +55,30 @@ gpointer sc_event_queue_thread_loop(gpointer data)
             {
                 event = item->event;
                 arg = item->arg;
+
+                sc_access_levels arg_access;
+                if (sc_storage_get_access_levels(s_memory_default_ctx, arg, &arg_access) != SC_RESULT_OK)
+                    arg_access = sc_access_lvl_make_max;
+
                 g_free(item);
                 break;
             }
             else
             {
                 g_free(item);
+                g_rec_mutex_lock(&queue->mutex);
                 item = (sc_event_queue_item*)g_queue_pop_head(queue->queue);
+                g_rec_mutex_unlock(&queue->mutex);
             }
         }
 
         g_rec_mutex_lock(&queue->proc_mutex);
         queue->event_process = event;
-        g_rec_mutex_unlock(&queue->mutex);
 
         if (queue->event_process)
             queue->event_process->callback(queue->event_process, arg);
+
+        queue->event_process = 0;
         g_rec_mutex_unlock(&queue->proc_mutex);
 
         g_usleep(1000); // sleep for an one millisecond
@@ -136,6 +145,14 @@ void _sc_event_queue_item_remove(gpointer _item, gpointer _event)
         item->event = 0;
 }
 
+void _sc_event_queue_item_remove_by_addr(gpointer _item, gpointer _addr)
+{
+    sc_event_queue_item *item = (sc_event_queue_item*)_item;
+
+    if ((SC_ADDR_LOCAL_TO_INT(item->arg) == GPOINTER_TO_UINT(_addr)) && (sc_event_get_type(item->event)!= SC_EVENT_REMOVE_ELEMENT))
+        item->event = 0;
+}
+
 void sc_event_queue_remove(sc_event_queue *queue, sc_event *event)
 {
     g_assert(queue != 0);
@@ -150,4 +167,14 @@ void sc_event_queue_remove(sc_event_queue *queue, sc_event *event)
 
     g_rec_mutex_unlock(&queue->mutex);
 
+}
+
+void sc_event_queue_remove_element(sc_event_queue *queue, sc_addr addr)
+{
+    g_assert(queue != 0);
+    g_rec_mutex_lock(&queue->mutex);
+
+    g_queue_foreach(queue->queue, _sc_event_queue_item_remove_by_addr, (gpointer)SC_ADDR_LOCAL_TO_INT(addr));
+
+    g_rec_mutex_unlock(&queue->mutex);
 }

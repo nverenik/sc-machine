@@ -34,9 +34,9 @@ sc_event *ui_translator_sc2scn_json_event = (sc_event*)nullptr;
 
 void ui_initialize_translators()
 {
-    ui_translator_sc2scs_event = sc_event_new(keynode_command_initiated, SC_EVENT_ADD_OUTPUT_ARC, 0, uiSc2ScsTranslator::ui_translate_sc2scs, 0);
-    ui_translator_sc2scg_json_event = sc_event_new(keynode_command_initiated, SC_EVENT_ADD_OUTPUT_ARC, 0, uiSc2SCgJsonTranslator::ui_translate_sc2scg_json, 0);
-    ui_translator_sc2scn_json_event = sc_event_new(keynode_command_initiated, SC_EVENT_ADD_OUTPUT_ARC, 0, uiSc2SCnJsonTranslator::ui_translate_sc2scn, 0);
+    ui_translator_sc2scs_event = sc_event_new(s_default_ctx, keynode_command_initiated, SC_EVENT_ADD_OUTPUT_ARC, 0, uiSc2ScsTranslator::ui_translate_sc2scs, 0);
+    ui_translator_sc2scg_json_event = sc_event_new(s_default_ctx, keynode_command_initiated, SC_EVENT_ADD_OUTPUT_ARC, 0, uiSc2SCgJsonTranslator::ui_translate_sc2scg_json, 0);
+    ui_translator_sc2scn_json_event = sc_event_new(s_default_ctx, keynode_command_initiated, SC_EVENT_ADD_OUTPUT_ARC, 0, uiSc2SCnJsonTranslator::ui_translate_sc2scn, 0);
 }
 
 void ui_shutdown_translators()
@@ -56,7 +56,8 @@ sc_result ui_translate_command_resolve_arguments(sc_addr cmd_addr, sc_addr *outp
     sc_bool source_found = SC_FALSE;
 
     // resolve output format
-    it = sc_iterator5_f_a_a_a_f_new(cmd_addr,
+    it = sc_iterator5_f_a_a_a_f_new(s_default_ctx,
+                                    cmd_addr,
                                     sc_type_arc_pos_const_perm,
                                     sc_type_node | sc_type_const,
                                     sc_type_arc_pos_const_perm,
@@ -74,7 +75,8 @@ sc_result ui_translate_command_resolve_arguments(sc_addr cmd_addr, sc_addr *outp
         return SC_RESULT_ERROR;
 
     // resolve input construction
-    it = sc_iterator5_f_a_a_a_f_new(cmd_addr,
+    it = sc_iterator5_f_a_a_a_f_new(s_default_ctx,
+                                    cmd_addr,
                                     sc_type_arc_pos_const_perm,
                                     sc_type_node | sc_type_const,
                                     sc_type_arc_pos_const_perm,

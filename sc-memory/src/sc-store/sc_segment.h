@@ -32,8 +32,11 @@ along with OSTIS.  If not, see <http://www.gnu.org/licenses/>.
 //! Structure to store segment locks
 typedef struct _sc_segment_section
 {
-    const sc_memory_context *ctx_lock;    // pointer to context, that locked section
-    const sc_memory_context *ctx;
+    const sc_memory_context *ctx_lock;      // pointer to context, that locked section
+    sc_int empty_count;                     // use 32-bit value for atomic operations
+    sc_int empty_offset;                    // use 32-bit value for atomic operations
+    sc_int internal_lock;                   //
+    sc_int lock_count;                      // count of recursive locks
 } sc_segment_section;
 
 /*! Structure for segment storing
@@ -41,10 +44,9 @@ typedef struct _sc_segment_section
 struct _sc_segment
 {
     sc_element elements[SC_SEGMENT_ELEMENTS_COUNT];
-    sc_bool has_empty_slots;
-    sc_addr_seg num; // number of this segment in memory
+    sc_addr_seg num;            // number of this segment in memory
     sc_segment_section sections[SC_CONCURRENCY_LEVEL];
-    sc_uint32 elements_count;
+    sc_uint elements_count;   // number of sc-element in the segment
 };
 
 /*! Create new segment with specified size.
@@ -54,17 +56,7 @@ sc_segment* sc_segment_new(sc_addr_seg num);
 
 void sc_segment_free(sc_segment *segment);
 
-
-/*! Append element into segment at first empty position.
- * @param seg Pointer to segment, that will be contains element
- * @param el Pointer to sc-element data (will be just copied)
- * @param offset Offset of sc-element in segment.
- * @note sc-element with @p offset must to be locked!
- * @return Return pointer to created sc-element data. If element wasn't append into segment, then return 0.
- */
-void sc_segment_set_element(sc_segment *seg, sc_element *el, sc_uint16 offset);
-
-//! Remove element from specified segment. @note sc-element with @p offset need to bew locked
+//! Remove element from specified segment. @note sc-element need to be locked
 void sc_segment_erase_element(sc_segment *seg, sc_uint16 offset);
 
 //! Returns number of stored sc-elements in segment
@@ -82,6 +74,9 @@ sc_uint32 sc_segment_get_elements_count(sc_segment *seg);
  * @returns If \p segment has any empty slots, then return SC_TRUE; otherwise return SC_FALSE
  */
 sc_bool sc_segment_has_empty_slot(sc_segment *segment);
+
+//! Collects segment elements statistics
+void sc_segment_collect_elements_stat(const sc_memory_context *ctx, sc_segment * seg, sc_stat * stat);
 
 
 // ---------------------- locks --------------------------
@@ -118,5 +113,10 @@ void sc_segment_section_lock(const sc_memory_context *ctx, sc_segment_section *s
 sc_bool sc_segment_section_lock_try(const sc_memory_context *ctx, sc_segment_section *section, sc_uint16 max_attempts);
 //! Unlocks specified segment part
 void sc_segment_section_unlock(const sc_memory_context *ctx, sc_segment_section *section);
+
+#if SC_PROFILE_MODE
+void sc_segment_reset_profile();
+void sc_segment_print_profile();
+#endif
 
 #endif

@@ -27,6 +27,11 @@ along with OSTIS.  If not, see <http://www.gnu.org/licenses/>.
 #include "sc_defines.h"
 #include "sc_stream.h"
 
+#if SC_DEBUG_MODE
+# define STORAGE_CHECK_CALL(x) {sc_result __r = x; g_assert(__r == SC_RESULT_OK); }
+#else
+# define STORAGE_CHECK_CALL(x) { x; }
+#endif
 
 /*! Initialize sc storage in specified path
  * @param path Path to repository
@@ -35,7 +40,7 @@ along with OSTIS.  If not, see <http://www.gnu.org/licenses/>.
 sc_bool sc_storage_initialize(const char *path, sc_bool clear);
 
 //! Shutdown sc storage
-void sc_storage_shutdown();
+void sc_storage_shutdown(sc_bool save_state);
 
 //! Check if storage initialized
 sc_bool sc_storage_is_initialized();
@@ -57,9 +62,8 @@ sc_bool sc_storage_is_element(const sc_memory_context *ctx, sc_addr addr);
 
 /*! Create new sc-element in storage.
  * Only for internal usage.
- * Use \b sc_storage_node_new and \b sc_storage_arc_new functions instead.
  */
-sc_addr sc_storage_element_new(const sc_memory_context *ctx, sc_type type);
+sc_addr sc_storage_element_new_access(const sc_memory_context *ctx, sc_type type, sc_access_levels access_levels);
 
 /*! Remove sc-element from storage
  * @param addr sc-addr of element to erase
@@ -70,23 +74,32 @@ sc_result sc_storage_element_free(const sc_memory_context *ctx, sc_addr addr);
 
 /*! Create new sc-node
  * @param type Type of new sc-node
- *
- * @return Return sc-addr of created sc-node
+ * @return Return sc-addr of created sc-node or empty sc-addr if sc-node wasn't created
  */
 sc_addr sc_storage_node_new(const sc_memory_context *ctx, sc_type type);
 
+//! Create new sc-node with specified access level
+sc_addr sc_storage_node_new_ext(const sc_memory_context *ctx, sc_type type, sc_access_levels access_levels);
+
 /*! Create new sc-link
+ * @return Return sc-addr of created sc-link or empty sc-addr if sc-link wasn't created
  */
 sc_addr sc_storage_link_new(const sc_memory_context *ctx);
+
+//! Create sc-link with specified access levels
+sc_addr sc_storage_link_new_ext(const sc_memory_context *ctx, sc_access_levels access_levels);
 
 /*! Create new sc-arc.
  * @param type Type of new sc-arc
  * @param beg sc-addr of begin sc-element
  * @param end sc-addr of end sc-element
  *
- * @return Return sc-addr of created sc-arc
+ * @return Return sc-addr of created sc-arc or empty sc-addr if sc-arc wasn't created
  */
 sc_addr sc_storage_arc_new(const sc_memory_context *ctx, sc_type type, sc_addr beg, sc_addr end);
+
+//! Create new sc-arc with specified access levels
+sc_addr sc_storage_arc_new_ext(const sc_memory_context *ctx, sc_type type, sc_addr beg, sc_addr end, sc_access_levels access_levels);
 
 /*! Get type of sc-element with specified sc-addr
  * @param addr sc-addr of element to get type
@@ -94,14 +107,14 @@ sc_addr sc_storage_arc_new(const sc_memory_context *ctx, sc_type type, sc_addr b
  * @return If input params are correct and type resolved, then return SC_OK;
  * otherwise return SC_ERROR
  */
-sc_result sc_storage_get_element_type(sc_addr addr, sc_type *result);
+sc_result sc_storage_get_element_type(const sc_memory_context *ctx, sc_addr addr, sc_type *result);
 
 /*! Change element sub-type
  * @param addr sc-addr of element to set new type
  * @param type New sub-type of sc-element (this type must be: type & sc_type_element_mask == 0)
  * @return If sub-type changed, then returns SC_RESULT_OK; otherwise returns SC_RESULT_ERROR
  */
-sc_result sc_storage_change_element_subtype(sc_addr addr, sc_type type);
+sc_result sc_storage_change_element_subtype(const sc_memory_context *ctx, sc_addr addr, sc_type type);
 
 /*! Returns sc-addr of begin element of specified arc
  * @param addr sc-addr of arc to get begin element
@@ -109,7 +122,7 @@ sc_result sc_storage_change_element_subtype(sc_addr addr, sc_type type);
  * @return If input params are correct and begin element resolved, then return SC_OK.
  * If element with specified addr isn't an arc, then return SC_INVALID_TYPE
  */
-sc_result sc_storage_get_arc_begin(sc_addr addr, sc_addr *result);
+sc_result sc_storage_get_arc_begin(const sc_memory_context *ctx, sc_addr addr, sc_addr *result);
 
 /*! Returns sc-addr of end element of specified arc
  * @param addr sc-addr of arc to get end element
@@ -117,7 +130,7 @@ sc_result sc_storage_get_arc_begin(sc_addr addr, sc_addr *result);
  * @return If input params are correct and end element resolved, then return SC_OK.
  * If element with specified addr isn't an arc, then return SC_INVALID_TYPE
  */
-sc_result sc_storage_get_arc_end(sc_addr addr, sc_addr *result);
+sc_result sc_storage_get_arc_end(const sc_memory_context *ctx, sc_addr addr, sc_addr *result);
 
 /*! Setup content data for specified sc-link
  * @param addr sc-addr of sc-link to setup content
@@ -130,7 +143,7 @@ sc_result sc_storage_get_arc_end(sc_addr addr, sc_addr *result);
  * <li>SC_ERROR - unknown error</li>
  * </ul>
  */
-sc_result sc_storage_set_link_content(sc_addr addr, const sc_stream *stream);
+sc_result sc_storage_set_link_content(const sc_memory_context *ctx, sc_addr addr, const sc_stream *stream);
 
 /*! Returns content data from specified sc-link
  * @param addr sc-addr of sc-link to get content data
@@ -143,7 +156,7 @@ sc_result sc_storage_set_link_content(sc_addr addr, const sc_stream *stream);
  * <li>SC_ERROR - unknown error</li>
  * </ul>
  */
-sc_result sc_storage_get_link_content(sc_addr addr, sc_stream **stream);
+sc_result sc_storage_get_link_content(const sc_memory_context *ctx, sc_addr addr, sc_stream **stream);
 
 /*! Search sc-link addrs by specified data
  * @param stream Pointert to stream that contains data for search
@@ -155,7 +168,19 @@ sc_result sc_storage_get_link_content(sc_addr addr, sc_stream **stream);
  * sc-addrs
  * @attention \p result array need to be free after usage
  */
-sc_result sc_storage_find_links_with_content(const sc_stream *stream, sc_addr **result, sc_uint32 *result_count);
+sc_result sc_storage_find_links_with_content(const sc_memory_context *ctx, const sc_stream *stream, sc_addr **result, sc_uint32 *result_count);
+
+/*! Setup new access levels to sc-element. New access levels will be a minimum from context access levels and parameter \b access_levels
+ * @param addr sc-addr of sc-element to change access levels
+ * @param access_levels new access levels
+ * @param new_value new value of access levels for sc-element. This parameter can be NULL
+ *
+ * @return Returns SC_RESULT_OK, when access level changed; otherwise it returns error code
+ */
+sc_result sc_storage_set_access_levels(const sc_memory_context *ctx, sc_addr addr, sc_access_levels access_levels, sc_access_levels * new_value);
+
+//! Get access levels of sc-element
+sc_result sc_storage_get_access_levels(const sc_memory_context *ctx, sc_addr addr, sc_access_levels * result);
 
 //! Returns number of segments
 sc_uint sc_storage_get_segments_count();
@@ -165,25 +190,22 @@ sc_uint sc_storage_get_segments_count();
  * @return If statictics info collect without any errors, then return SC_OK;
  * otherwise return SC_ERROR
  */
-sc_result sc_storage_get_elements_stat(sc_stat *stat);
+sc_result sc_storage_get_elements_stat(const sc_memory_context *ctx, sc_stat *stat);
 
-//! Returns time stamp value
-sc_uint sc_storage_get_time_stamp();
-
-/*! Updates segments.
- * Calculate empty slots. Delete garbage
- * @note Only for internal usage
- */
-void sc_storage_update_segments();
-
+sc_result sc_storage_erase_element_from_segment(sc_addr addr);
 
 // ----- Locks -----
-//! Locks specified sc-element and return pointer to it
-sc_element* sc_storage_element_lock(const sc_memory_context *ctx, sc_addr addr);
-//! Try to lock sc-element by maximum attempts
-sc_element* sc_storage_element_lock_try(const sc_memory_context *ctx, sc_addr addr, sc_uint16 max_attempts);
+//! Locks specified sc-element. Pointer to locked sc-element stores in el
+sc_result sc_storage_element_lock(const sc_memory_context *ctx, sc_addr addr, sc_element **el);
+//! Try to lock sc-element by maximum attempts. If element wasn't locked and there are no errors, then el pointer will have null value.
+sc_result sc_storage_element_lock_try(const sc_memory_context *ctx, sc_addr addr, sc_uint16 max_attempts, sc_element **el);
 //! Unlocks specified sc-element
-void sc_storage_element_unlock(const sc_memory_context *ctx, sc_addr addr);
+sc_result sc_storage_element_unlock(const sc_memory_context *ctx, sc_addr addr);
+
+#if SC_PROFILE_MODE
+void sc_storage_reset_profile();
+void sc_storage_print_profile();
+#endif
 
 #endif
 

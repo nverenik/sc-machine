@@ -50,7 +50,7 @@ sc_memory_context* sc_memory_initialize(const sc_memory_params *params);
 
 
 //! Shutdown sc-memory (save repository to file system)
-void sc_memory_shutdown();
+void sc_memory_shutdown(sc_bool save_state);
 
 /*! Function that create memory context with specified params
  * @param levels Access levels, you can create it with macros @see sc_access_level_make
@@ -174,6 +174,21 @@ sc_result sc_memory_get_link_content(sc_memory_context const * ctx, sc_addr addr
  * @attention \p result array need to be free after usage
  */
 sc_result sc_memory_find_links_with_content(sc_memory_context const * ctx, sc_stream const * stream, sc_addr **result, sc_uint32 *result_count);
+
+/*! Setup new access levele for sc-element. New access levels will be a minimum from context access levels and parameter \b access_levels
+ * @param addr sc-add of sc-element to change access levels
+ * @param access_levels New access levels
+ * @param new_value Pointer to structure that contains new value of access levels. This pointer can be a NULL.
+ */
+sc_result sc_memory_set_element_access_levels(sc_memory_context const * ctx, sc_addr addr, sc_access_levels access_levels, sc_access_levels * new_value);
+
+/*! Get access levels of sc-element
+ * @param addr sc-addr of sc-element to get access levels
+ * @param result Pointer to container for result
+ *
+ * @return If access levele returned in \b result, then return SC_RESULT_OK; otherwise returns error code
+ */
+sc_result sc_memory_get_element_access_levels(sc_memory_context const * ctx, sc_addr addr, sc_access_levels * result);
 
 /*! Collect statistic information about current state of sc-memory
  * @param stat Pointer to structure, that will contains statistics info

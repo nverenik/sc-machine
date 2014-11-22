@@ -31,12 +31,12 @@ sc_event *event_question_set_cantorization;
 
 sc_result initialize()
 {
-    s_default_ctx = sc_memory_context_new(sc_access_levels_make(8, 8));
+    s_default_ctx = sc_memory_context_new(sc_access_lvl_make_min);
 
     if (merge_keynodes_initialize() != SC_RESULT_OK)
         return SC_RESULT_ERROR;
 
-    event_question_set_cantorization = sc_event_new(keynode_question_initiated, SC_EVENT_ADD_OUTPUT_ARC, 0, agent_set_cantorization, 0);
+    event_question_set_cantorization = sc_event_new(s_default_ctx, keynode_question_initiated, SC_EVENT_ADD_OUTPUT_ARC, 0, agent_set_cantorization, 0);
     if (event_question_set_cantorization == nullptr)
         return SC_RESULT_ERROR;
 
