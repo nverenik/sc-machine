@@ -29,7 +29,12 @@ HEADERS += \
     src/sc_memory_headers.h \
     src/sc_memory_ext.h \
     src/sc-store/sc_fm_engine_private.h \
-    src/sc-store/sc_fm_engine.h
+    src/sc-store/sc_fm_engine.h \
+    src/sc_helper_private.h \
+    src/sc_memory_private.h \
+    src/sc_memory_version.h \
+    src/sc-store/sc_event/sc_event_private.h \
+    src/sc-store/sc_event/sc_event_queue.h
 
 SOURCES += \
     src/sc_memory.c \
@@ -48,7 +53,9 @@ SOURCES += \
     src/sc_memory_ext.c \
     src/sc-store/sc_config.c \
     src/sc-store/sc_iterator.c \
-    src/sc-store/sc_fm_engine.c
+    src/sc-store/sc_fm_engine.c \
+    src/sc_memory_version.c \
+    src/sc-store/sc_event/sc_event_queue.c
 
 win32 {
     INCLUDEPATH += "../glib/include/glib-2.0"

@@ -24,9 +24,12 @@ unix {
 }
 
 HEADERS += \
-    sc_stream_redis.h
+    sc_stream_redis.h \
+    sc_fm_redis.h \
+    sc_fm_redis_config.h
 
 SOURCES += \
     sc_stream_redis.c \
-    sc_fm_redis.c
+    sc_fm_redis.c \
+    sc_fm_redis_config.c
 

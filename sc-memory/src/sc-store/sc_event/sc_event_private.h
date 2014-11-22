@@ -23,7 +23,8 @@ along with OSTIS.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef _sc_event_private_h_
 #define _sc_event_private_h_
 
-#include "sc_types.h"
+#include "../sc_event.h"
+#include "../sc_types.h"
 
 
 /*! Structure that contains information about event
