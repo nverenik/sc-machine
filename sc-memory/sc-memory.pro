@@ -34,7 +34,8 @@ HEADERS += \
     src/sc_memory_private.h \
     src/sc_memory_version.h \
     src/sc-store/sc_event/sc_event_private.h \
-    src/sc-store/sc_event/sc_event_queue.h
+    src/sc-store/sc_event/sc_event_queue.h \
+    src/sc-store/sc_storage_snp_glue.h
 
 SOURCES += \
     src/sc_memory.c \
@@ -55,7 +56,9 @@ SOURCES += \
     src/sc-store/sc_iterator.c \
     src/sc-store/sc_fm_engine.c \
     src/sc_memory_version.c \
-    src/sc-store/sc_event/sc_event_queue.c
+    src/sc-store/sc_event/sc_event_queue.c \
+    src/sc-store/sc_storage_snp.c \
+    src/sc-store/sc_storage_snp_glue.cpp
 
 win32 {
     INCLUDEPATH += "../glib/include/glib-2.0"
@@ -73,3 +76,16 @@ unix {
     PKGCONFIG += gmodule-2.0
 }
 
+# include this config to qmake to replace storage
+# implementation with hardware (CUDA in the best case)
+HardwareStorage {
+    # TODO: move snp library inside of the project,
+    # for now it's external
+    SNPPATH = ../../snp
+    DEFINES += ENABLE_HARDWARE_STORAGE SNP_TARGET_ROCKS_DB
+    QMAKE_CXXFLAGS += -std=c++11
+    INCLUDEPATH += \
+        $$SNPPATH/include
+    # TODO: don't forget to replace it with release library
+    LIBS += $$quote(-L$$SNPPATH/prebuilt) -lsnp.rocksdb.debug
+}

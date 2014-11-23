@@ -22,6 +22,8 @@ along with OSTIS.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "sc_storage.h"
 
+#ifndef ENABLE_HARDWARE_STORAGE
+
 #include "sc_defines.h"
 #include "sc_segment.h"
 #include "sc_element.h"
@@ -1193,3 +1195,5 @@ void sc_storage_print_profile()
 }
 
 #endif
+
+#endif //!ENABLE_HARDWARE_STORAGE
