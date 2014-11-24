@@ -27,9 +27,11 @@ along with OSTIS.  If not, see <http://www.gnu.org/licenses/>.
 #include <memory.h>
 #include <stdlib.h>
 
+#ifndef __cplusplus
 #ifndef nullptr
 #define nullptr ((void*)0)
 #endif
+#endif //!__cplusplus
 
 // base types
 typedef signed char sc_int8;

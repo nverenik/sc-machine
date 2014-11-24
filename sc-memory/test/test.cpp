@@ -549,7 +549,7 @@ void test_links()
 
         sc_stream *rstream;
         g_assert(sc_memory_get_link_content(ctx, link, &rstream) == SC_RESULT_OK);
-        g_assert(rstream != nullptr);
+        g_assert(rstream != 0);
         g_assert(test_stream_equal(stream2, rstream) == SC_TRUE);
 
         sc_stream_free(stream);
