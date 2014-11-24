@@ -1,5 +1,7 @@
 #include "sc_storage_snp_glue.h"
 
+#ifdef ENABLE_HARDWARE_STORAGE
+
 #include <snp/snp.h>
 using snp::snpErrorCode;
 
@@ -31,3 +33,4 @@ sc_bool snp_is_initialized()
     return s_Device.isReady() ? SC_TRUE : SC_FALSE;
 }
 
+#endif //ENABLE_HARDWARE_STORAGE
