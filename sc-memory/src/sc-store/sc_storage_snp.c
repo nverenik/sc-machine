@@ -49,6 +49,8 @@ sc_bool sc_storage_is_initialized()
  */
 sc_element* sc_storage_append_el_into_segments(const sc_memory_context *ctx, sc_element *element, sc_addr *addr)
 {
+    // note: used only in sc_storage.c (private method?), should we delete it?
+
     (void)ctx;
     (void)element;
     (void)addr;
@@ -74,6 +76,8 @@ sc_bool sc_storage_is_element(const sc_memory_context *ctx, sc_addr addr)
  */
 sc_addr sc_storage_element_new_access(const sc_memory_context *ctx, sc_type type, sc_access_levels access_levels)
 {
+    // note: not used, should we delete it?
+
     (void)ctx;
     (void)type;
     (void)access_levels;
@@ -101,6 +105,8 @@ sc_result sc_storage_element_free(const sc_memory_context *ctx, sc_addr addr)
  */
 sc_addr sc_storage_node_new(const sc_memory_context *ctx, sc_type type)
 {
+    // note: it's enough to have only sc_storage_node_new_ext method, should we remove this one?
+
     (void)ctx;
     (void)type;
 
@@ -124,6 +130,8 @@ sc_addr sc_storage_node_new_ext(const sc_memory_context *ctx, sc_type type, sc_a
  */
 sc_addr sc_storage_link_new(const sc_memory_context *ctx)
 {
+    // note: it's enough to have only sc_storage_link_new_ext method, should we remove this one?
+
     (void)ctx;
 
     sc_addr addr;
@@ -149,6 +157,8 @@ sc_addr sc_storage_link_new_ext(const sc_memory_context *ctx, sc_access_levels a
  */
 sc_addr sc_storage_arc_new(const sc_memory_context *ctx, sc_type type, sc_addr beg, sc_addr end)
 {
+    // note: it's enough to have only sc_storage_arc_new_ext method, should we remove this one?
+
     (void)ctx;
     (void)type;
     (void)beg;
@@ -243,6 +253,16 @@ sc_result sc_storage_get_arc_end(const sc_memory_context *ctx, sc_addr addr, sc_
  */
 sc_result sc_storage_set_link_content(const sc_memory_context *ctx, sc_addr addr, const sc_stream *stream)
 {
+    // Calculate crc32 from input stream and push it into device memory
+    // In case if crc32 itself is bigger than content we can just store content
+    // instead.
+    //
+    // Where should we store streamed data? Does it initially use the same DB as for graph?
+    // So do we need to startup the DB again?
+    //
+    // sc_link_calculate_checksum()
+    // sc_fs_storage_write_content()
+
     (void)ctx;
     (void)addr;
     (void)stream;
@@ -263,6 +283,9 @@ sc_result sc_storage_set_link_content(const sc_memory_context *ctx, sc_addr addr
  */
 sc_result sc_storage_get_link_content(const sc_memory_context *ctx, sc_addr addr, sc_stream **stream)
 {
+    // sc_link_calculate_checksum()
+    // sc_fs_storage_get_checksum_content()
+
     (void)ctx;
     (void)addr;
     (void)stream;
@@ -282,6 +305,12 @@ sc_result sc_storage_get_link_content(const sc_memory_context *ctx, sc_addr addr
  */
 sc_result sc_storage_find_links_with_content(const sc_memory_context *ctx, const sc_stream *stream, sc_addr **result, sc_uint32 *result_count)
 {
+    // calculate crc32 from the stream, find the cell which contains such crc32
+    // => get ID of link node
+    //
+    // (!) we can get number of matched nodes without reading from device, but
+    // we need to execute kernel the same number of times as the matched nodes amount
+
     (void)ctx;
     (void)stream;
     (void)result;
@@ -320,6 +349,7 @@ sc_result sc_storage_get_access_levels(const sc_memory_context *ctx, sc_addr add
 //! Returns number of segments
 sc_uint sc_storage_get_segments_count()
 {
+    // not used?
     return SC_RESULT_ERROR;
 }
 

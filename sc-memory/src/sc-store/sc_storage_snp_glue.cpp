@@ -28,7 +28,10 @@ static Device s_Device;
 //        snp |    Unique Identifier (ID)   |           Attributes        | Reserved|
 //            +-----------------------------+-------------------+---------+---------+
 //
-// 1Gb of memory => 24 403 223 elements of graph
+// For instance: 1Gb of memory => 24 403 223 elements of graph
+//
+// ! Note: seems we shouldn't store sc_memory_context:access_level field,
+// but access level from sc_element:sc_element_flags
 //
 
 static std::string s_sDumpFilePath;
