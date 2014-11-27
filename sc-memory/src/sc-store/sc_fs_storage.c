@@ -360,6 +360,19 @@ sc_result sc_fs_storage_get_checksum_content(const sc_check_sum *check_sum, sc_s
     return sc_fm_stream_new(fm_engine, check_sum, SC_STREAM_READ, stream);
 }
 
+sc_result sc_fs_storage_save_start()
+{
 
+}
+
+sc_result sc_fs_storage_save_finish()
+{
+
+}
+
+sc_result sc_fs_storage_save_segment(sc_segment *seg, sc_addr_seg idx)
+{
+
+}
 
 

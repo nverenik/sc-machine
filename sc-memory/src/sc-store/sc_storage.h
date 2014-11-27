@@ -194,6 +194,8 @@ sc_result sc_storage_get_elements_stat(const sc_memory_context *ctx, sc_stat *st
 
 sc_result sc_storage_erase_element_from_segment(sc_addr addr);
 
+//! Save state of storage to file system
+sc_result sc_storage_save();
 
 // ----- Locks -----
 //! Returns pointer to sc-element metainfo
