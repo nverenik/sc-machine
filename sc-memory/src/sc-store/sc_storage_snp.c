@@ -21,10 +21,15 @@ along with OSTIS.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "sc_storage.h"
+#include "../sc_memory_private.h"
+
+#include <glib.h>
 
 #ifdef ENABLE_HARDWARE_STORAGE
 
-#include "sc_storage_snp_glue.h"
+#include "sc_storage_snp/sc_storage_snp_glue.h"
+
+#define PARAM_NOT_USED(__param__) (void)(__param__)
 
 sc_bool sc_storage_initialize(const char *path, sc_bool clear)
 {
@@ -41,144 +46,80 @@ sc_bool sc_storage_is_initialized()
     return snp_is_initialized() ? SC_TRUE : SC_FALSE;
 }
 
-/*! Append sc-element to segments pool
- * @param element Pointer to structure, that contains element information
- * @param addr Pointer to sc-addr structure, that will contains sc-addr of appended sc-element
- * @return Return pointer to created sc-element data. If sc-element wasn't appended, then return 0.
- * @note Returned sc-element is locked
- */
 sc_element* sc_storage_append_el_into_segments(const sc_memory_context *ctx, sc_element *element, sc_addr *addr)
 {
-    // note: used only in sc_storage.c (private method?), should we delete it?
+    PARAM_NOT_USED(ctx);
+    PARAM_NOT_USED(element);
+    PARAM_NOT_USED(addr);
 
-    (void)ctx;
-    (void)element;
-    (void)addr;
-
+    g_assert(!"Method is not used in snp storage implementation.");
     return 0;
 }
 
-/*! Check if sc-element with specified sc-addr exist
- * @param addr sc-addr of element
- * @return Returns SC_TRUE, if sc-element with \p addr exist; otherwise return false.
- * If element deleted, then return SC_FALSE.
- */
 sc_bool sc_storage_is_element(const sc_memory_context *ctx, sc_addr addr)
 {
-    (void)ctx;
-    (void)addr;
-
-    return SC_FALSE;
+    PARAM_NOT_USED(ctx);
+    return snp_element_exists(addr);
 }
 
-/*! Create new sc-element in storage.
- * Only for internal usage.
- */
 sc_addr sc_storage_element_new_access(const sc_memory_context *ctx, sc_type type, sc_access_levels access_levels)
 {
-    // note: not used, should we delete it?
+    PARAM_NOT_USED(ctx);
+    PARAM_NOT_USED(type);
+    PARAM_NOT_USED(access_levels);
 
-    (void)ctx;
-    (void)type;
-    (void)access_levels;
+    g_assert(!"Method is not used in snp storage implementation.");
 
     sc_addr addr;
     return addr;
 }
 
-/*! Remove sc-element from storage
- * @param addr sc-addr of element to erase
- * @return If input params are correct and element erased, then return SC_OK;
- * otherwise return SC_ERROR
- */
 sc_result sc_storage_element_free(const sc_memory_context *ctx, sc_addr addr)
 {
-    (void)ctx;
-    (void)addr;
-
-    return SC_RESULT_ERROR;
+    return snp_element_destroy(ctx, addr);
 }
 
-/*! Create new sc-node
- * @param type Type of new sc-node
- * @return Return sc-addr of created sc-node or empty sc-addr if sc-node wasn't created
- */
 sc_addr sc_storage_node_new(const sc_memory_context *ctx, sc_type type)
 {
-    // note: it's enough to have only sc_storage_node_new_ext method, should we remove this one?
-
-    (void)ctx;
-    (void)type;
-
-    sc_addr addr;
-    return addr;
+    return sc_storage_node_new_ext(ctx, type, ctx->access_levels);
 }
 
-//! Create new sc-node with specified access level
 sc_addr sc_storage_node_new_ext(const sc_memory_context *ctx, sc_type type, sc_access_levels access_levels)
 {
-    (void)ctx;
-    (void)type;
-    (void)access_levels;
+    PARAM_NOT_USED(ctx);
 
-    sc_addr addr;
-    return addr;
+    g_assert(!(sc_type_arc_mask & type));
+    type = sc_flags_remove(sc_type_node | type);
+
+    return snp_element_create_node(type, access_levels);
 }
 
-/*! Create new sc-link
- * @return Return sc-addr of created sc-link or empty sc-addr if sc-link wasn't created
- */
 sc_addr sc_storage_link_new(const sc_memory_context *ctx)
 {
-    // note: it's enough to have only sc_storage_link_new_ext method, should we remove this one?
-
-    (void)ctx;
-
-    sc_addr addr;
-    return addr;
+    return sc_storage_link_new_ext(ctx, ctx->access_levels);
 }
 
-//! Create sc-link with specified access levels
 sc_addr sc_storage_link_new_ext(const sc_memory_context *ctx, sc_access_levels access_levels)
 {
-    (void)ctx;
-    (void)access_levels;
+    PARAM_NOT_USED(ctx);
 
-    sc_addr addr;
-    return addr;
+    sc_type type = sc_type_link;
+    return snp_element_create_node(type, access_levels);
 }
 
-/*! Create new sc-arc.
- * @param type Type of new sc-arc
- * @param beg sc-addr of begin sc-element
- * @param end sc-addr of end sc-element
- *
- * @return Return sc-addr of created sc-arc or empty sc-addr if sc-arc wasn't created
- */
 sc_addr sc_storage_arc_new(const sc_memory_context *ctx, sc_type type, sc_addr beg, sc_addr end)
 {
-    // note: it's enough to have only sc_storage_arc_new_ext method, should we remove this one?
-
-    (void)ctx;
-    (void)type;
-    (void)beg;
-    (void)end;
-
-    sc_addr addr;
-    return addr;
+    return sc_storage_arc_new_ext(ctx, type, beg, end, ctx->access_levels);
 }
 
-//! Create new sc-arc with specified access levels
 sc_addr sc_storage_arc_new_ext(const sc_memory_context *ctx, sc_type type, sc_addr beg, sc_addr end, sc_access_levels access_levels)
 {
-    (void)ctx;
-    (void)type;
-    (void)beg;
-    (void)end;
-    (void)access_levels;
+    PARAM_NOT_USED(ctx);
 
-    sc_addr addr;
-    return addr;
+    g_assert(!(sc_type_node & type));
+    type = sc_flags_remove((type & sc_type_arc_mask) ? type : (sc_type_arc_common | type));
+
+    return snp_element_create_arc(type, beg, end, access_levels);
 }
 
 /*! Get type of sc-element with specified sc-addr
@@ -346,11 +287,10 @@ sc_result sc_storage_get_access_levels(const sc_memory_context *ctx, sc_addr add
     return SC_RESULT_ERROR;
 }
 
-//! Returns number of segments
 sc_uint sc_storage_get_segments_count()
 {
-    // not used?
-    return SC_RESULT_ERROR;
+    g_assert(!"Method is not used in snp storage implementation.");
+    return 0;
 }
 
 /*! Get statistics information about elements

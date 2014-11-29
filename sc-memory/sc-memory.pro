@@ -35,7 +35,9 @@ HEADERS += \
     src/sc_memory_version.h \
     src/sc-store/sc_event/sc_event_private.h \
     src/sc-store/sc_event/sc_event_queue.h \
-    src/sc-store/sc_storage_snp_glue.h
+    src/sc-store/sc_storage_snp/sc_storage_snp_glue.h \
+    src/sc-store/sc_storage_snp/sc_storage_snp_types.h \
+    src/sc-store/sc_storage_snp/sc_storage_snp_config.h
 
 SOURCES += \
     src/sc_memory.c \
@@ -58,7 +60,7 @@ SOURCES += \
     src/sc_memory_version.c \
     src/sc-store/sc_event/sc_event_queue.c \
     src/sc-store/sc_storage_snp.c \
-    src/sc-store/sc_storage_snp_glue.cpp
+    src/sc-store/sc_storage_snp/sc_storage_snp_glue.cpp
 
 win32 {
     INCLUDEPATH += "../glib/include/glib-2.0"
