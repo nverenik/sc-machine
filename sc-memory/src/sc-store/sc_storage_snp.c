@@ -87,10 +87,6 @@ sc_addr sc_storage_node_new(const sc_memory_context *ctx, sc_type type)
 sc_addr sc_storage_node_new_ext(const sc_memory_context *ctx, sc_type type, sc_access_levels access_levels)
 {
     PARAM_NOT_USED(ctx);
-
-    g_assert(!(sc_type_arc_mask & type));
-    type = sc_flags_remove(sc_type_node | type);
-
     return snp_element_create_node(type, access_levels);
 }
 
@@ -102,9 +98,7 @@ sc_addr sc_storage_link_new(const sc_memory_context *ctx)
 sc_addr sc_storage_link_new_ext(const sc_memory_context *ctx, sc_access_levels access_levels)
 {
     PARAM_NOT_USED(ctx);
-
-    sc_type type = sc_type_link;
-    return snp_element_create_node(type, access_levels);
+    return snp_element_create_node(sc_type_link, access_levels);
 }
 
 sc_addr sc_storage_arc_new(const sc_memory_context *ctx, sc_type type, sc_addr beg, sc_addr end)
@@ -115,70 +109,27 @@ sc_addr sc_storage_arc_new(const sc_memory_context *ctx, sc_type type, sc_addr b
 sc_addr sc_storage_arc_new_ext(const sc_memory_context *ctx, sc_type type, sc_addr beg, sc_addr end, sc_access_levels access_levels)
 {
     PARAM_NOT_USED(ctx);
-
-    g_assert(!(sc_type_node & type));
-    type = sc_flags_remove((type & sc_type_arc_mask) ? type : (sc_type_arc_common | type));
-
     return snp_element_create_arc(type, beg, end, access_levels);
 }
 
-/*! Get type of sc-element with specified sc-addr
- * @param addr sc-addr of element to get type
- * @param result Pointer to result container
- * @return If input params are correct and type resolved, then return SC_OK;
- * otherwise return SC_ERROR
- */
 sc_result sc_storage_get_element_type(const sc_memory_context *ctx, sc_addr addr, sc_type *result)
 {
-    (void)ctx;
-    (void)addr;
-    (void)result;
-
-    return SC_RESULT_ERROR;
+    return snp_element_get_type(ctx, addr, result);
 }
 
-/*! Change element sub-type
- * @param addr sc-addr of element to set new type
- * @param type New sub-type of sc-element (this type must be: type & sc_type_element_mask == 0)
- * @return If sub-type changed, then returns SC_RESULT_OK; otherwise returns SC_RESULT_ERROR
- */
 sc_result sc_storage_change_element_subtype(const sc_memory_context *ctx, sc_addr addr, sc_type type)
 {
-    (void)ctx;
-    (void)addr;
-    (void)type;
-
-    return SC_RESULT_ERROR;
+    return snp_element_set_subtype(ctx, addr, type);
 }
 
-/*! Returns sc-addr of begin element of specified arc
- * @param addr sc-addr of arc to get begin element
- * @param result Pointer to result container
- * @return If input params are correct and begin element resolved, then return SC_OK.
- * If element with specified addr isn't an arc, then return SC_INVALID_TYPE
- */
 sc_result sc_storage_get_arc_begin(const sc_memory_context *ctx, sc_addr addr, sc_addr *result)
 {
-    (void)ctx;
-    (void)addr;
-    (void)result;
-
-    return SC_RESULT_ERROR;
+    return snp_element_arc_get_begin(ctx, addr, result);
 }
 
-/*! Returns sc-addr of end element of specified arc
- * @param addr sc-addr of arc to get end element
- * @param result PoOinter to result container
- * @return If input params are correct and end element resolved, then return SC_OK.
- * If element with specified addr isn't an arc, then return SC_INVALID_TYPE
- */
 sc_result sc_storage_get_arc_end(const sc_memory_context *ctx, sc_addr addr, sc_addr *result)
 {
-    (void)ctx;
-    (void)addr;
-    (void)result;
-
-    return SC_RESULT_ERROR;
+    return snp_element_arc_get_end(ctx, addr, result);
 }
 
 /*! Setup content data for specified sc-link
@@ -313,6 +264,15 @@ sc_result sc_storage_erase_element_from_segment(sc_addr addr)
 }
 
 // ----- Locks -----
+
+//! Returns pointer to sc-element metainfo
+sc_element_meta* sc_storage_get_element_meta(const sc_memory_context *ctx, sc_addr addr)
+{
+    (void)ctx;
+    (void)addr;
+
+    return 0;
+}
 
 //! Locks specified sc-element. Pointer to locked sc-element stores in el
 sc_result sc_storage_element_lock(const sc_memory_context *ctx, sc_addr addr, sc_element **el)

@@ -19,6 +19,12 @@ sc_result   snp_element_destroy(const sc_memory_context *ctx, sc_addr addr);
 sc_addr     snp_element_create_node(sc_type type, sc_access_levels access_levels);
 sc_addr     snp_element_create_arc(sc_type type, sc_addr beg, sc_addr end, sc_access_levels access_levels);
 
+sc_result   snp_element_get_type(const sc_memory_context *ctx, sc_addr addr, sc_type *result);
+sc_result   snp_element_set_subtype(const sc_memory_context *ctx, sc_addr addr, sc_type type);
+
+sc_result   snp_element_arc_get_begin(const sc_memory_context *ctx, sc_addr addr, sc_addr *result);
+sc_result   snp_element_arc_get_end(const sc_memory_context *ctx, sc_addr addr, sc_addr *result);
+
 #ifdef __cplusplus
 }
 #endif
