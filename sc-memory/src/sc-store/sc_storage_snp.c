@@ -98,7 +98,7 @@ sc_addr sc_storage_link_new(const sc_memory_context *ctx)
 sc_addr sc_storage_link_new_ext(const sc_memory_context *ctx, sc_access_levels access_levels)
 {
     PARAM_NOT_USED(ctx);
-    return snp_element_create_node(sc_type_link, access_levels);
+    return snp_element_create_link(access_levels);
 }
 
 sc_addr sc_storage_arc_new(const sc_memory_context *ctx, sc_type type, sc_addr beg, sc_addr end)
@@ -124,118 +124,37 @@ sc_result sc_storage_change_element_subtype(const sc_memory_context *ctx, sc_add
 
 sc_result sc_storage_get_arc_begin(const sc_memory_context *ctx, sc_addr addr, sc_addr *result)
 {
-    return snp_element_arc_get_begin(ctx, addr, result);
+    return snp_element_get_arc_begin(ctx, addr, result);
 }
 
 sc_result sc_storage_get_arc_end(const sc_memory_context *ctx, sc_addr addr, sc_addr *result)
 {
-    return snp_element_arc_get_end(ctx, addr, result);
+    return snp_element_get_arc_end(ctx, addr, result);
 }
 
-/*! Setup content data for specified sc-link
- * @param addr sc-addr of sc-link to setup content
- * @param stream Pointer to stream
- * @return If content of specified link changed without any errors, then return SC_OK; otherwise
- * returns on of error codes:
- * <ul>
- * <li>SC_INVALID_TYPE - element with \p addr isn't a sc-link</li>
- * <li>SC_ERROR_INVALID_PARAMS - element with specifed \p addr doesn't exist
- * <li>SC_ERROR - unknown error</li>
- * </ul>
- */
 sc_result sc_storage_set_link_content(const sc_memory_context *ctx, sc_addr addr, const sc_stream *stream)
 {
-    // Calculate crc32 from input stream and push it into device memory
-    // In case if crc32 itself is bigger than content we can just store content
-    // instead.
-    //
-    // Where should we store streamed data? Does it initially use the same DB as for graph?
-    // So do we need to startup the DB again?
-    //
-    // sc_link_calculate_checksum()
-    // sc_fs_storage_write_content()
-
-    (void)ctx;
-    (void)addr;
-    (void)stream;
-
-    return SC_RESULT_ERROR;
+    return snp_element_set_link_content(ctx, addr, stream);
 }
 
-/*! Returns content data from specified sc-link
- * @param addr sc-addr of sc-link to get content data
- * @param stream Pointer to returned data stream
- * @return If content of specified link returned without any errors, then return SC_OK; otherwise
- * returns on of error codes:
- * <ul>
- * <li>SC_INVALID_TYPE - element with \p addr isn't a sc-link</li>
- * <li>SC_ERROR_INVALID_PARAMS - element with specifed \p addr doesn't exist
- * <li>SC_ERROR - unknown error</li>
- * </ul>
- */
 sc_result sc_storage_get_link_content(const sc_memory_context *ctx, sc_addr addr, sc_stream **stream)
 {
-    // sc_link_calculate_checksum()
-    // sc_fs_storage_get_checksum_content()
-
-    (void)ctx;
-    (void)addr;
-    (void)stream;
-
-    return SC_RESULT_ERROR;
+    return snp_element_get_link_content(ctx, addr, stream);
 }
 
-/*! Search sc-link addrs by specified data
- * @param stream Pointert to stream that contains data for search
- * @param result Pointer to result container
- * @param result_count Container for results count
- * @return If sc-links with specified checksum found, then sc-addrs of found link
- * writes into \p result array and function returns SC_OK; otherwise \p result will contain
- * empty sc-addr and function returns SC_OK. In any case \p result_count contains number of found
- * sc-addrs
- * @attention \p result array need to be free after usage
- */
 sc_result sc_storage_find_links_with_content(const sc_memory_context *ctx, const sc_stream *stream, sc_addr **result, sc_uint32 *result_count)
 {
-    // calculate crc32 from the stream, find the cell which contains such crc32
-    // => get ID of link node
-    //
-    // (!) we can get number of matched nodes without reading from device, but
-    // we need to execute kernel the same number of times as the matched nodes amount
-
-    (void)ctx;
-    (void)stream;
-    (void)result;
-    (void)result_count;
-
-    return SC_RESULT_ERROR;
+    return snp_element_find_link(ctx, stream, result, result_count);
 }
 
-/*! Setup new access levels to sc-element. New access levels will be a minimum from context access levels and parameter \b access_levels
- * @param addr sc-addr of sc-element to change access levels
- * @param access_levels new access levels
- * @param new_value new value of access levels for sc-element. This parameter can be NULL
- *
- * @return Returns SC_RESULT_OK, when access level changed; otherwise it returns error code
- */
 sc_result sc_storage_set_access_levels(const sc_memory_context *ctx, sc_addr addr, sc_access_levels access_levels, sc_access_levels * new_value)
 {
-    (void)ctx;
-    (void)addr;
-    (void)access_levels;
-    (void)new_value;
-
-    return SC_RESULT_ERROR;
+    return snp_element_set_access_levels(ctx, addr, access_levels, new_value);
 }
 
-//! Get access levels of sc-element
 sc_result sc_storage_get_access_levels(const sc_memory_context *ctx, sc_addr addr, sc_access_levels * result)
 {
-    (void)ctx;
-    (void)addr;
-    (void)result;
-
-    return SC_RESULT_ERROR;
+    return snp_element_get_access_levels(ctx, addr, result);
 }
 
 sc_uint sc_storage_get_segments_count()

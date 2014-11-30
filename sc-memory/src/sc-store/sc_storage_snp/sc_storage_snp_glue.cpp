@@ -241,6 +241,11 @@ sc_addr snp_element_create_node(sc_type type, sc_access_levels access_levels)
     return VertexID.m_asAddr;
 }
 
+sc_addr snp_element_create_link(sc_access_levels access_levels)
+{
+    return snp_element_create_node(sc_type_link, access_levels);
+}
+
 sc_addr snp_element_create_arc(sc_type type, sc_addr beg, sc_addr end, sc_access_levels access_levels)
 {
     snp_enter_critical_section();
@@ -406,7 +411,108 @@ sc_result snp_element_set_subtype(const sc_memory_context *ctx, sc_addr addr, sc
     return eResult;
 }
 
-sc_result snp_element_arc_get_begin(const sc_memory_context *ctx, sc_addr addr, sc_addr *result)
+sc_result snp_element_get_access_levels(const sc_memory_context *ctx, sc_addr addr, sc_access_levels *result)
+{
+    snp_enter_critical_section();
+
+    sc_result eResult = SC_RESULT_ERROR;
+    do
+    {
+        // prevent working with device as soon as possible
+        if (!result)
+        {
+            assert(0);
+            break;
+        }
+
+        sc_storage_snp::VertexID VertexID;
+        VertexID.m_asAddr = addr;
+
+        // try to read this cell (including read access check)
+        sc_storage_snp::Cell Cell;
+        if (!snp_vertex_read(ctx, VertexID, Cell, eResult))
+            break;
+
+        (*result) = Cell.m_asVertex.m_scAccessLevels;
+    }
+    while(0);
+
+    snp_leave_critical_section();
+    return eResult;
+}
+
+sc_result snp_element_set_access_levels(const sc_memory_context *ctx, sc_addr addr, sc_access_levels access_levels, sc_access_levels *new_value)
+{
+    snp_enter_critical_section();
+
+    sc_result eResult = SC_RESULT_ERROR;
+    do
+    {
+        sc_storage_snp::VertexID VertexID;
+        VertexID.m_asAddr = addr;
+
+        // does this element exist?
+        if (!snp_vertex_find(VertexID))
+            break;
+
+        sc_storage_snp::Cell Cell;
+
+        // if we are here it exists, right? just read it.
+        snpErrorCode eErrorCode;
+        bool bExists = s_Device.read(Cell.m_asBitfield, &eErrorCode);
+        assert(bExists && eErrorCode == snpErrorCode::SUCCEEDED);
+
+        // but to be sure...
+        if (!bExists || eErrorCode != snpErrorCode::SUCCEEDED)
+            break;
+
+        // check write access
+        if (!sc_access_lvl_check_write(ctx->access_levels, Cell.m_asVertex.m_scAccessLevels))
+        {
+            eResult = SC_RESULT_ERROR_NO_WRITE_RIGHTS;
+            break;
+        }
+
+        // change access level
+        sc_storage_snp::Cell AddressMask;
+        snpBitfieldSet(AddressMask.m_asBitfield.raw, 0);
+        snpBitfieldSet(AddressMask.m_asVertex.m_ID.m_asBitfield.raw, ~0);
+        AddressMask.m_uiType = 0b11;
+
+        sc_storage_snp::Cell AddressData;
+        AddressData.m_uiType = static_cast<uint8>(sc_storage_snp::CellType::VERTEX);
+        AddressData.m_asVertex.m_ID.m_asBitfield = VertexID.m_asBitfield;
+
+        sc_storage_snp::Cell DataMask;
+        snpBitfieldSet(DataMask.m_asBitfield.raw, 0);
+        DataMask.m_asVertex.m_scAccessLevels = ~0;
+
+        sc_storage_snp::Cell DataData;
+        DataData.m_asVertex.m_scAccessLevels = sc_access_lvl_min(ctx->access_levels, access_levels);
+
+        sc_storage_snp::Device::snpInstruction Instruction;
+        Instruction.field.addressMask = AddressMask.m_asBitfield;
+        Instruction.field.addressData = AddressData.m_asBitfield;
+        Instruction.field.dataMask = DataMask.m_asBitfield;
+        Instruction.field.dataData = DataData.m_asBitfield;
+
+        bExists = s_Device.exec(true, snp::snpAssign, Instruction, &eErrorCode);
+        assert(bExists && eErrorCode == snpErrorCode::SUCCEEDED);
+
+        // but to be sure...
+        if (!bExists || eErrorCode != snpErrorCode::SUCCEEDED)
+            break;
+
+        if (new_value) (*new_value) = DataData.m_asVertex.m_scAccessLevels;
+        eResult = SC_RESULT_OK;
+    }
+    while(0);
+
+    snp_leave_critical_section();
+    return eResult;
+}
+
+sc_result snp_element_get_arc_begin(const sc_memory_context *ctx, sc_addr addr, sc_addr *result)
 {
     snp_enter_critical_section();
 
@@ -531,7 +637,7 @@ sc_result snp_element_arc_get_begin(const sc_memory_context *ctx, sc_addr addr, 
     return eResult;
 }
 
-sc_result snp_element_arc_get_end(const sc_memory_context *ctx, sc_addr addr, sc_addr *result)
+sc_result snp_element_get_arc_end(const sc_memory_context *ctx, sc_addr addr, sc_addr *result)
 {
     snp_enter_critical_section();
 
@@ -606,28 +712,49 @@ sc_result snp_element_arc_get_end(const sc_memory_context *ctx, sc_addr addr, sc
     return eResult;
 }
 
+sc_result snp_element_get_link_content(const sc_memory_context *ctx, sc_addr addr, sc_stream **stream)
+{
+    // not implemented yet
+    return SC_RESULT_ERROR;
+}
+
+sc_result snp_element_set_link_content(const sc_memory_context *ctx, sc_addr addr, const sc_stream *stream)
+{
+    // not implemented yet
+    return SC_RESULT_ERROR;
+}
+
+sc_result snp_element_find_link(const sc_memory_context *ctx, const sc_stream *stream, sc_addr **result, sc_uint32 *result_count)
+{
+    // not implemented yet
+    return SC_RESULT_ERROR;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Private methods, no multithread guard is needed
 
 void snp_enter_critical_section()
 {
-    // nothing for now
+    // not implemented yet
 }
 
 void snp_leave_critical_section()
 {
-    // nothing for now
+    // not implemented yet
 }
 
 bool snp_data_storage_init(const std::string &path, bool clear)
 {
     (void)path;
     (void)clear;
+
+    // not implemented yet
     return true;
 }
 
 void snp_data_storage_shutdown()
 {
+    // not implemented yet
 }
 
 sc_storage_snp::VertexID snp_vertex_id_obtain()
