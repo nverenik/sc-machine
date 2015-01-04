@@ -55,6 +55,7 @@ sc_int32 segments_cache_count = 0;
 sc_segment* segments_cache[SC_SEGMENT_CACHE_SIZE]; // cache of segments that have empty elements
 
 GMutex s_mutex_free;
+GMutex s_mutex_save;
 
 #define CONCURRENCY_TO_CACHE_IDX(x) ((x) % SC_SEGMENT_CACHE_SIZE)
 
@@ -274,6 +275,7 @@ sc_result sc_storage_element_free(const sc_memory_context *ctx, sc_addr addr)
     sc_result result = SC_RESULT_OK;
 
     g_mutex_lock(&s_mutex_free);
+    g_mutex_lock(&s_mutex_save);
 
     // first of all we need to collect and lock all elements
     sc_element *el;
@@ -573,6 +575,7 @@ sc_result sc_storage_element_free(const sc_memory_context *ctx, sc_addr addr)
         sc_storage_element_unlock(ctx, addr);
     }
 
+    g_mutex_unlock(&s_mutex_save);
     g_mutex_unlock(&s_mutex_free);
 
     g_slist_free(remove_list);
@@ -1129,6 +1132,29 @@ unsigned int sc_storage_get_segments_count()
 sc_result sc_storage_erase_element_from_segment(sc_addr addr)
 {
     sc_segment_erase_element(g_atomic_pointer_get(&segments[addr.seg]), addr.offset);
+}
+
+sc_result sc_storage_save()
+{
+    g_mutex_lock(&s_mutex_save);
+    sc_fs_storage_save_start();
+    sc_uint32 i, n = g_atomic_int_get(&segments_num);
+    for (i = 0; i < n; ++i)
+    {
+        g_assert(segments[i] != nullptr);
+        sc_segment_lock(s_memory_default_ctx, segments[i]);
+    }
+
+    // save segments one by one
+    for (i = 0; i < n; ++i)
+    {
+        g_assert(segments[i] != nullptr);
+        sc_fs_storage_save_segment(segments[i], i);
+        sc_segment_unlock(s_memory_default_ctx, segments[i]);
+    }
+
+    sc_fs_storage_save_finish();
+    g_mutex_unlock(&s_mutex_save);
 }
 
 // ------------------------------

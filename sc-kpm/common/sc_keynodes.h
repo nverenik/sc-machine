@@ -20,20 +20,14 @@ along with OSTIS. If not, see <http://www.gnu.org/licenses/>.
 -----------------------------------------------------------------------------
  */
 
-#ifndef _utils_keynodes_h_
-#define _utils_keynodes_h_
+#ifndef _sc_keynodes_h_
+#define _sc_keynodes_h_
 
+#include "sc_helper.h"
 #include "sc_memory.h"
 
-extern sc_addr keynode_nrel_idtf;
-extern sc_addr keynode_nrel_main_idtf;
-extern sc_addr keynode_nrel_system_identifier;
-extern sc_addr keynode_system_element;
+sc_result sc_common_resolve_keynode(sc_memory_context const * ctx, char const * sys_idtf, sc_addr * keynode);
 
-extern sc_addr keynode_sc_garbage;
-
-sc_result utils_collect_keynodes_initialize();
-
-sc_result utils_keynodes_initialize();
+#define RESOLVE_KEYNODE(ctx, keynode) if (sc_common_resolve_keynode(ctx, keynode##_str, &keynode) != SC_RESULT_OK) return SC_RESULT_ERROR;
 
 #endif

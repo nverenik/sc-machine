@@ -146,6 +146,20 @@ sc_element_meta* sc_segment_get_meta(const sc_memory_context *ctx, sc_segment * 
 }
 
 // ---------------------------
+void sc_segment_lock(const sc_memory_context *ctx, sc_segment *seg)
+{
+    sc_uint32 i = 0;
+    for (; i < SC_CONCURRENCY_LEVEL; ++i)
+        sc_segment_section_lock(ctx, &seg->sections[i]);
+}
+
+void sc_segment_unlock(const sc_memory_context *ctx, sc_segment *seg)
+{
+    sc_uint32 i = 0;
+    for (; i < SC_CONCURRENCY_LEVEL; ++i)
+        sc_segment_section_unlock(ctx, &seg->sections[i]);
+}
+
 sc_element* sc_segment_lock_empty_element(const sc_memory_context *ctx, sc_segment *seg, sc_addr_offset *offset)
 {
     sc_uint16 max_attempts = 1;

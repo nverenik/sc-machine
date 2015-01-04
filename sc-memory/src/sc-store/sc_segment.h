@@ -83,6 +83,11 @@ void sc_segment_collect_elements_stat(const sc_memory_context *ctx, sc_segment *
 sc_element_meta* sc_segment_get_meta(const sc_memory_context *ctx, sc_segment * seg, sc_addr_offset offset);
 
 // ---------------------- locks --------------------------
+//! Lock whole segment
+void sc_segment_lock(const sc_memory_context *ctx, sc_segment *seg);
+//! Unlock whole segment
+void sc_segment_unlock(const sc_memory_context *ctx, sc_segment *seg);
+
 /*! Function to lock any empty element
  * @param seg Pointer to segment where to lock empty element
  * @param offset Poitner to container for locked element offset

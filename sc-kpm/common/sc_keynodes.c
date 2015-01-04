@@ -20,20 +20,18 @@ along with OSTIS. If not, see <http://www.gnu.org/licenses/>.
 -----------------------------------------------------------------------------
  */
 
-#ifndef _utils_keynodes_h_
-#define _utils_keynodes_h_
+#include "sc_keynodes.h"
 
-#include "sc_memory.h"
+#include <glib.h>
 
-extern sc_addr keynode_nrel_idtf;
-extern sc_addr keynode_nrel_main_idtf;
-extern sc_addr keynode_nrel_system_identifier;
-extern sc_addr keynode_system_element;
-
-extern sc_addr keynode_sc_garbage;
-
-sc_result utils_collect_keynodes_initialize();
-
-sc_result utils_keynodes_initialize();
-
-#endif
+sc_result sc_common_resolve_keynode(sc_memory_context const * ctx, char const * sys_idtf, sc_addr * keynode)
+{
+    if (sc_helper_resolve_system_identifier(ctx, sys_idtf, keynode) == SC_FALSE)
+    {
+        *keynode = sc_memory_node_new(ctx, 0);
+        if (sc_helper_set_system_identifier(ctx, *keynode, sys_idtf, strlen(sys_idtf)) != SC_RESULT_OK)
+            return SC_RESULT_ERROR;
+        g_message("Created element with system identifier: %s", sys_idtf);
+    }
+    return SC_RESULT_OK;
+}

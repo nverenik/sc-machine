@@ -20,6 +20,7 @@ along with OSTIS. If not, see <http://www.gnu.org/licenses/>.
 -----------------------------------------------------------------------------
  */
 #include "utils_keynodes.h"
+#include "../common/sc_keynodes.h"
 #include "utils.h"
 #include <glib.h>
 
@@ -28,27 +29,28 @@ const char keynode_nrel_main_idtf_str[] = "nrel_main_idtf";
 const char keynode_nrel_system_identifier_str[] = "nrel_system_identifier";
 const char keynode_system_element_str[] = "system_element";
 
+const char keynode_sc_garbage_str[] = "sc_garbage";
+
 sc_addr keynode_nrel_idtf;
 sc_addr keynode_nrel_main_idtf;
 sc_addr keynode_nrel_system_identifier;
 sc_addr keynode_system_element;
 
-#define resolve_keynode(keynode) \
-    if (sc_helper_resolve_system_identifier(s_default_ctx, keynode##_str, &keynode) == SC_FALSE) \
-    {\
-        g_warning("Can't find element with system identifier: %s", keynode##_str); \
-        keynode = sc_memory_node_new(s_default_ctx, 0); \
-        if (sc_helper_set_system_identifier(s_default_ctx, keynode, keynode##_str, strlen(keynode##_str)) != SC_RESULT_OK) \
-            return SC_RESULT_ERROR; \
-        g_message("Created element with system identifier: %s", keynode##_str); \
-    }
+sc_addr keynode_sc_garbage;
+
+sc_result utils_collect_keynodes_initialize()
+{
+    RESOLVE_KEYNODE(s_default_ctx, keynode_nrel_idtf);
+    RESOLVE_KEYNODE(s_default_ctx, keynode_nrel_main_idtf);
+    RESOLVE_KEYNODE(s_default_ctx, keynode_nrel_system_identifier);
+    RESOLVE_KEYNODE(s_default_ctx, keynode_system_element);
+
+    return SC_RESULT_OK;
+}
 
 sc_result utils_keynodes_initialize()
 {
-    resolve_keynode(keynode_nrel_idtf);
-    resolve_keynode(keynode_nrel_main_idtf);
-    resolve_keynode(keynode_nrel_system_identifier);
-    resolve_keynode(keynode_system_element);
+    RESOLVE_KEYNODE(s_default_ctx, keynode_sc_garbage);
 
     return SC_RESULT_OK;
 }

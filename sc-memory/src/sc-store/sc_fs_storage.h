@@ -104,5 +104,15 @@ sc_result sc_fs_storage_find_links_with_content(const sc_check_sum *check_sum, s
  */
 sc_result sc_fs_storage_get_checksum_content(const sc_check_sum *check_sum, sc_stream **stream);
 
+// ---------------------------------------------------
+//! Init storage save
+sc_result sc_fs_storage_save_start();
+
+//! Finish storage save
+sc_result sc_fs_storage_save_finish();
+
+//! Save specified segment data
+sc_result sc_fs_storage_save_segment(sc_segment *seg, sc_addr_seg idx);
+
 
 #endif
