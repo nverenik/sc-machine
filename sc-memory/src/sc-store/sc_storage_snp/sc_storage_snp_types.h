@@ -21,19 +21,30 @@ struct Vertex
     VertexID            m_ID;               // 32bit
     sc_access_levels    m_scAccessLevels;   // 8bit
     sc_type             m_scType;           // 16bit
-    uint8               m_lock;             // 8bit
+    uint8               m_uLock;            // 8bit
+    uint8               m_uType     : 2;    // 2bit
+    uint8               m_uLinkSize : 5;    // 5bit
+    uint16              _reserved   : 9;    // 9bit
+    uint16              m_uSearch;          // 16bit
 };
 
 struct Edge
 {
-    VertexID    m_ID1;  // 32bit
-    VertexID    m_ID2;  // 32bit
+    VertexID    m_ID1;              // 32bit
+    VertexID    m_ID2;              // 32bit
+    uint8       m_uType     : 2;    // 2bit
+    uint16      _reserved   : 14;   // 11bit
+    uint16      m_uSearch;          // 16bit
 };
 
 struct Link
 {
-    VertexID    m_ID;       // 32bit
-    uint32      m_checksum; // 32bit
+    VertexID    m_ID;                   // 32bit
+    uint32      m_uChecksum;            // 32bit
+    uint8       m_uType         : 2;    // 2bit
+    uint8       m_uLinkIndex    : 3;    // 3bit
+    uint16      _reserved       : 11;   // 11bit
+    uint16      m_uSearch;              // 16bit
 };
 
 enum class CellType : uint8
@@ -47,18 +58,9 @@ enum class CellType : uint8
 union Cell
 {
     Device::snpBitfield m_asBitfield;
-    struct
-    {
-        uint8 m_uiType : 2;
-        union
-        {
-            uint32  m_asUint32[2];
-            Vertex  m_asVertex;
-            Edge    m_asEdge;
-            Link    m_asLink;
-        };
-        uint8 m_uiSearch[2];
-    };
+    Vertex              m_asVertex;
+    Edge                m_asEdge;
+    Link                m_asLink;
 };
 
 }

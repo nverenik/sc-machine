@@ -3,19 +3,25 @@
 #ifdef ENABLE_HARDWARE_STORAGE
 
 #include <string>
+#include <vector>
+#include <glib.h>
+
 #include <snp/snp.h>
 using snp::snpErrorCode;
 
 #include "sc_storage_snp_types.h"
 #include "../../sc_memory_private.h"
 
+#include "../sc_storage.h"
+#include "../sc_fs_storage.h"
+#include "../sc_link_helpers.h"
+#include "../sc_stream_memory.h"
+
 // create static device instance with predefined bitwidth
 static sc_storage_snp::Device s_Device;
 
 static std::string s_sDumpFilePath;
 static std::string s_sDumpFileName = "snp.dump";
-
-#define snp_clear_struct(__struct__) memset(&__struct__, 0, sizeof(__struct__))
 
 // forward declaration for private methods
 void snp_enter_critical_section();
@@ -33,6 +39,13 @@ bool snp_vertex_read(const sc_memory_context *ctx, const sc_storage_snp::VertexI
 bool snp_vertex_create(const sc_storage_snp::VertexID &vertex_id, sc_type type, sc_access_levels access_levels);
 bool snp_edge_create(const sc_storage_snp::VertexID &vertex_id1, const sc_storage_snp::VertexID &vertex_id2);
 
+bool snp_link_create(const sc_storage_snp::VertexID &vertex_id, uint32 checksum, uint8 index);
+bool snp_link_destroy(const sc_storage_snp::VertexID &vertex_id);
+bool snp_link_read(const sc_storage_snp::VertexID &vertex_id, uint8 size, std::vector<char> &output);
+
+#define SNP_BITFIELD_DATA_SET                   snpBitfieldSet
+#define SNP_BITFIELD_MASK_SET(__bitfield__)     snpBitfieldSet((__bitfield__), -1)
+#define SNP_BITFIELD_MASK_RESET(__bitfield__)   snpBitfieldSet((__bitfield__),  0)
 
 //
 // Storage consists of two parts:
@@ -75,9 +88,9 @@ sc_bool snp_initialize(const char *path, sc_bool clear)
 
             // clear device memory
             sc_storage_snp::Device::snpInstruction Instruction;
-            snpBitfieldSet(Instruction.field.addressMask.raw, 0);
-            snpBitfieldSet(Instruction.field.dataMask.raw, ~0);
-            snpBitfieldSet(Instruction.field.dataData.raw, 0);
+            SNP_BITFIELD_MASK_RESET(Instruction.field.addressMask.raw);
+            SNP_BITFIELD_MASK_SET(Instruction.field.dataMask.raw);
+            SNP_BITFIELD_DATA_SET(Instruction.field.dataData.raw, 0);
             s_Device.exec(false, snp::snpAssign, Instruction);
         }
         else
@@ -176,24 +189,31 @@ sc_result snp_element_destroy(const sc_memory_context *ctx, sc_addr addr)
         }
 
         // release all cells with specified ID (this includes found vertex and
-        // all its output edges
+        // all its output edges)
         //
         // IMPORTANT: if cell layout is changed that it's possible we will need
         // separated instruction execution to delete output edges
 
         sc_storage_snp::Cell AddressMask;
-        snpBitfieldSet(AddressMask.m_asBitfield.raw, 0);
-        snpBitfieldSet(AddressMask.m_asVertex.m_ID.m_asBitfield.raw, ~0);
+        SNP_BITFIELD_MASK_RESET(AddressMask.m_asBitfield.raw);
+        SNP_BITFIELD_MASK_SET(AddressMask.m_asVertex.m_ID.m_asBitfield.raw);
 
         sc_storage_snp::Cell AddressData;
         AddressData.m_asVertex.m_ID.m_asBitfield = VertexID.m_asBitfield;
 
         // fill matched cells with zeros
+        sc_storage_snp::Cell DataMask;
+        SNP_BITFIELD_MASK_SET(DataMask.m_asBitfield.raw);
+
+        sc_storage_snp::Cell DataData;
+        SNP_BITFIELD_DATA_SET(DataData.m_asBitfield.raw, 0);
+
+        // run instruction
         sc_storage_snp::Device::snpInstruction Instruction;
-        snpBitfieldSet(Instruction.raw, 0);
-        snpBitfieldSet(Instruction.field.dataMask.raw, ~0);
         Instruction.field.addressMask = AddressMask.m_asBitfield;
         Instruction.field.addressData = AddressData.m_asBitfield;
+        Instruction.field.dataMask = DataMask.m_asBitfield;
+        Instruction.field.dataData = DataData.m_asBitfield;
 
         s_Device.exec(false, snp::snpAssign, Instruction, &eErrorCode);
         if (eErrorCode != snpErrorCode::SUCCEEDED)
@@ -203,8 +223,8 @@ sc_result snp_element_destroy(const sc_memory_context *ctx, sc_addr addr)
         }
 
         // now delete all input edges
-        snpBitfieldSet(AddressMask.m_asBitfield.raw, 0);
-        snpBitfieldSet(AddressMask.m_asEdge.m_ID2.m_asBitfield.raw, ~0);
+        SNP_BITFIELD_MASK_RESET(AddressMask.m_asBitfield.raw);
+        SNP_BITFIELD_MASK_SET(AddressMask.m_asEdge.m_ID2.m_asBitfield.raw);
         AddressData.m_asEdge.m_ID2.m_asBitfield = VertexID.m_asBitfield;
 
         s_Device.exec(false, snp::snpAssign, Instruction, &eErrorCode);
@@ -234,7 +254,7 @@ sc_addr snp_element_create_node(sc_type type, sc_access_levels access_levels)
     if (!bCreated)
     {
         assert(0);
-        snpBitfieldSet(VertexID.m_asBitfield.raw, 0);
+        SNP_BITFIELD_DATA_SET(VertexID.m_asBitfield.raw, 0);
     }
 
     snp_leave_critical_section();
@@ -298,7 +318,7 @@ sc_addr snp_element_create_arc(sc_type type, sc_addr beg, sc_addr end, sc_access
     if (bError)
     {
         // todo: remove element and release ID
-        snpBitfieldSet(VertexID.m_asBitfield.raw, 0);
+        SNP_BITFIELD_DATA_SET(VertexID.m_asBitfield.raw, 0);
     }
 
     snp_leave_critical_section();
@@ -373,19 +393,19 @@ sc_result snp_element_set_subtype(const sc_memory_context *ctx, sc_addr addr, sc
             break;
         }
 
-        // change type
+        // change type        
         sc_storage_snp::Cell AddressMask;
-        snpBitfieldSet(AddressMask.m_asBitfield.raw, 0);
-        snpBitfieldSet(AddressMask.m_asVertex.m_ID.m_asBitfield.raw, ~0);
-        AddressMask.m_uiType = 0b11;
+        SNP_BITFIELD_MASK_RESET(AddressMask.m_asBitfield.raw);
+        SNP_BITFIELD_MASK_SET(AddressMask.m_asVertex.m_ID.m_asBitfield.raw);
+        AddressMask.m_asVertex.m_uType = 0b11;
 
         sc_storage_snp::Cell AddressData;
-        AddressData.m_uiType = static_cast<uint8>(sc_storage_snp::CellType::VERTEX);
+        AddressData.m_asVertex.m_uType = static_cast<uint8>(sc_storage_snp::CellType::VERTEX);
         AddressData.m_asVertex.m_ID.m_asBitfield = VertexID.m_asBitfield;
 
         sc_storage_snp::Cell DataMask;
-        snpBitfieldSet(DataMask.m_asBitfield.raw, 0);
-        DataMask.m_asVertex.m_scType = ~0;
+        SNP_BITFIELD_MASK_RESET(DataMask.m_asBitfield.raw);
+        DataMask.m_asVertex.m_scType = -1;
 
         sc_storage_snp::Cell DataData;
         DataData.m_asVertex.m_scType = (Cell.m_asVertex.m_scType & sc_type_element_mask) | (type & ~sc_type_element_mask);
@@ -475,16 +495,16 @@ sc_result snp_element_set_access_levels(const sc_memory_context *ctx, sc_addr ad
 
         // change access level
         sc_storage_snp::Cell AddressMask;
-        snpBitfieldSet(AddressMask.m_asBitfield.raw, 0);
-        snpBitfieldSet(AddressMask.m_asVertex.m_ID.m_asBitfield.raw, ~0);
-        AddressMask.m_uiType = 0b11;
+        SNP_BITFIELD_DATA_SET(AddressMask.m_asBitfield.raw, 0);
+        SNP_BITFIELD_DATA_SET(AddressMask.m_asVertex.m_ID.m_asBitfield.raw, ~0);
+        AddressMask.m_asVertex.m_uType = 0b11;
 
         sc_storage_snp::Cell AddressData;
-        AddressData.m_uiType = static_cast<uint8>(sc_storage_snp::CellType::VERTEX);
+        AddressData.m_asVertex.m_uType = static_cast<uint8>(sc_storage_snp::CellType::VERTEX);
         AddressData.m_asVertex.m_ID.m_asBitfield = VertexID.m_asBitfield;
 
         sc_storage_snp::Cell DataMask;
-        snpBitfieldSet(DataMask.m_asBitfield.raw, 0);
+        SNP_BITFIELD_DATA_SET(DataMask.m_asBitfield.raw, 0);
         DataMask.m_asVertex.m_scAccessLevels = ~0;
 
         sc_storage_snp::Cell DataData;
@@ -549,18 +569,18 @@ sc_result snp_element_get_arc_begin(const sc_memory_context *ctx, sc_addr addr, 
 
         // 1. reset search flag for all edges
         sc_storage_snp::Cell AddressMask;
-        snpBitfieldSet(AddressMask.m_asBitfield.raw, 0);
-        AddressMask.m_uiType = 0b11;
+        SNP_BITFIELD_DATA_SET(AddressMask.m_asBitfield.raw, 0);
+        AddressMask.m_asEdge.m_uType = 0b11;
 
         sc_storage_snp::Cell AddressData;
-        AddressData.m_uiType = static_cast<uint8>(sc_storage_snp::CellType::EDGE);
+        AddressData.m_asEdge.m_uType = static_cast<uint8>(sc_storage_snp::CellType::EDGE);
 
         sc_storage_snp::Cell DataMask;
-        snpBitfieldSet(DataMask.m_asBitfield.raw, 0);
-        DataMask.m_uiSearch[0] = snpBit(0);
+        SNP_BITFIELD_DATA_SET(DataMask.m_asBitfield.raw, 0);
+        DataMask.m_asEdge.m_uSearch = snpBit(0);
 
         sc_storage_snp::Cell DataData;
-        DataData.m_uiSearch[0] = 0;
+        DataData.m_asEdge.m_uSearch = 0;
 
         sc_storage_snp::Device::snpInstruction Instruction;
         Instruction.field.addressMask = AddressMask.m_asBitfield;
@@ -577,9 +597,9 @@ sc_result snp_element_get_arc_begin(const sc_memory_context *ctx, sc_addr addr, 
             break;
 
         // 2. mark all edges which have specified ID2 (ie. all input edges)
-        snpBitfieldSet(AddressMask.m_asEdge.m_ID2.m_asBitfield.raw, ~0);
+        SNP_BITFIELD_DATA_SET(AddressMask.m_asEdge.m_ID2.m_asBitfield.raw, ~0);
         AddressData.m_asEdge.m_ID2.m_asBitfield = VertexID.m_asBitfield;
-        DataData.m_uiSearch[0] = snpBit(0);
+        DataData.m_asEdge.m_uSearch = snpBit(0);
 
         Instruction.field.addressMask = AddressMask.m_asBitfield;
         Instruction.field.addressData = AddressData.m_asBitfield;
@@ -593,10 +613,10 @@ sc_result snp_element_get_arc_begin(const sc_memory_context *ctx, sc_addr addr, 
             break;
 
         // 3. read them until find vertex with node type (it must be only one with this type)
-        snpBitfieldSet(AddressMask.m_asEdge.m_ID2.m_asBitfield.raw, 0);
-        AddressMask.m_uiSearch[0] = snpBit(0);
-        AddressData.m_uiSearch[0] = snpBit(0);
-        DataData.m_uiSearch[0] = 0;
+        SNP_BITFIELD_DATA_SET(AddressMask.m_asEdge.m_ID2.m_asBitfield.raw, 0);
+        AddressMask.m_asEdge.m_uSearch = snpBit(0);
+        AddressData.m_asEdge.m_uSearch = snpBit(0);
+        DataData.m_asEdge.m_uSearch = 0;
 
         Instruction.field.addressMask = AddressMask.m_asBitfield;
         Instruction.field.addressData = AddressData.m_asBitfield;
@@ -674,16 +694,16 @@ sc_result snp_element_get_arc_end(const sc_memory_context *ctx, sc_addr addr, sc
 
         // 1. find this single edge
         sc_storage_snp::Cell AddressMask;
-        snpBitfieldSet(AddressMask.m_asBitfield.raw, 0);
-        snpBitfieldSet(AddressMask.m_asEdge.m_ID1.m_asBitfield.raw, ~0);
-        AddressMask.m_uiType = 0b11;
+        SNP_BITFIELD_DATA_SET(AddressMask.m_asBitfield.raw, 0);
+        SNP_BITFIELD_DATA_SET(AddressMask.m_asEdge.m_ID1.m_asBitfield.raw, ~0);
+        AddressMask.m_asEdge.m_uType = 0b11;
 
         sc_storage_snp::Cell AddressData;
-        AddressData.m_uiType = static_cast<uint8>(sc_storage_snp::CellType::EDGE);
+        AddressData.m_asEdge.m_uType = static_cast<uint8>(sc_storage_snp::CellType::EDGE);
         AddressData.m_asEdge.m_ID1.m_asBitfield = VertexID.m_asBitfield;
 
         sc_storage_snp::Device::snpInstruction Instruction;
-        snpBitfieldSet(Instruction.raw, 0);
+        SNP_BITFIELD_DATA_SET(Instruction.raw, 0);
         Instruction.field.addressMask = AddressMask.m_asBitfield;
         Instruction.field.addressData = AddressData.m_asBitfield;
 
@@ -714,20 +734,384 @@ sc_result snp_element_get_arc_end(const sc_memory_context *ctx, sc_addr addr, sc
 
 sc_result snp_element_get_link_content(const sc_memory_context *ctx, sc_addr addr, sc_stream **stream)
 {
-    // not implemented yet
-    return SC_RESULT_ERROR;
+    snp_enter_critical_section();
+
+    if (*stream)
+        *stream = nullptr;
+
+    sc_result eResult = SC_RESULT_ERROR;
+    do
+    {
+        // check input params
+        if (!stream)
+        {
+            eResult = SC_RESULT_ERROR_INVALID_PARAMS;
+            break;
+        }
+
+        sc_storage_snp::VertexID VertexID;
+        VertexID.m_asAddr = addr;
+
+        // try to find vertex by the specified identifier
+        if (!snp_vertex_find(VertexID))
+            break;
+
+        sc_storage_snp::Cell Cell;
+
+        // read it if exists
+        snpErrorCode eErrorCode;
+        bool bExists = s_Device.read(Cell.m_asBitfield, &eErrorCode);
+        assert(bExists && eErrorCode == snpErrorCode::SUCCEEDED);
+
+        if (!bExists || eErrorCode != snpErrorCode::SUCCEEDED)
+            break;
+
+        // check vertex type - it must be link
+        if (!(Cell.m_asVertex.m_scType & sc_type_link))
+        {
+            eResult = SC_RESULT_ERROR_INVALID_TYPE;
+            break;
+        }
+
+        // check read access
+        if (!sc_access_lvl_check_read(ctx->access_levels, Cell.m_asVertex.m_scAccessLevels))
+        {
+            eResult = SC_RESULT_ERROR_NO_READ_RIGHTS;
+            break;
+        }
+
+        if (!Cell.m_asVertex.m_uLinkSize)
+            break;
+
+        std::vector<char> aLinkData;
+        if (!snp_link_read(VertexID, Cell.m_asVertex.m_uLinkSize, aLinkData))
+            break;
+
+        if (Cell.m_asVertex.m_scType & sc_flag_link_self_container)
+        {
+            // the data from the device memory is the requested data itself
+            *stream = sc_stream_memory_new(&aLinkData[0], aLinkData.size(), SC_STREAM_READ, SC_TRUE);
+            eResult = SC_RESULT_OK;
+        }
+        else
+        {
+            sc_check_sum CheckSum;
+            CheckSum.len = aLinkData.size();
+
+            for (uint32 iIndex = 0; iIndex < aLinkData.size(); iIndex++)
+                CheckSum.data[iIndex] = aLinkData[iIndex];
+
+            eResult = sc_fs_storage_get_checksum_content(&CheckSum, stream);
+        }
+    }
+    while(0);
+
+    snp_leave_critical_section();
+    return eResult;
 }
 
 sc_result snp_element_set_link_content(const sc_memory_context *ctx, sc_addr addr, const sc_stream *stream)
 {
-    // not implemented yet
-    return SC_RESULT_ERROR;
+    snp_enter_critical_section();
+
+    sc_result eResult = SC_RESULT_ERROR;
+    do
+    {
+        // check input params
+        if (!stream)
+        {
+            eResult = SC_RESULT_ERROR_INVALID_PARAMS;
+            break;
+        }
+
+        sc_storage_snp::VertexID VertexID;
+        VertexID.m_asAddr = addr;
+
+        // try to find vertex by the specified identifier
+        if (!snp_vertex_find(VertexID))
+            break;
+
+        sc_storage_snp::Cell Cell;
+
+        // read it if exists
+        snpErrorCode eErrorCode;
+        bool bExists = s_Device.read(Cell.m_asBitfield, &eErrorCode);
+        assert(bExists && eErrorCode == snpErrorCode::SUCCEEDED);
+
+        if (!bExists || eErrorCode != snpErrorCode::SUCCEEDED)
+            break;
+
+        // check vertex type - it must be link
+        if (!(Cell.m_asVertex.m_scType & sc_type_link))
+        {
+            eResult = SC_RESULT_ERROR_INVALID_TYPE;
+            break;
+        }
+
+        // check write access
+        if (!sc_access_lvl_check_write(ctx->access_levels, Cell.m_asVertex.m_scAccessLevels))
+        {
+            eResult = SC_RESULT_ERROR_NO_WRITE_RIGHTS;
+            break;
+        }
+
+        // at first we have to delete content if link already has any
+        if (Cell.m_asVertex.m_uLinkSize)
+        {
+            std::vector<char> aLinkData;
+            if (!snp_link_read(VertexID, Cell.m_asVertex.m_uLinkSize, aLinkData))
+                break;
+
+            // delete data from device memory (it can be data itself or just checksum, no matter)
+            if (!snp_link_destroy(VertexID))
+                break;
+
+            // obtain checksum
+            sc_check_sum CheckSum;
+            if (Cell.m_asVertex.m_scType & sc_flag_link_self_container)
+            {
+                // the data from the device memory is the requested data itself
+                // so we calculate checksum from it
+                sc_stream *pStream = sc_stream_memory_new(&aLinkData[0], aLinkData.size(), SC_STREAM_READ, SC_FALSE);
+                bool bChecksum = sc_link_calculate_checksum(stream, &CheckSum);
+                sc_stream_free(pStream);
+
+                if (!bChecksum)
+                {
+                    // link data was already destroyed
+                    assert(0);
+                    break;
+                }
+            }
+            else
+            {
+                CheckSum.len = aLinkData.size();
+                for (uint32 iIndex = 0; iIndex < aLinkData.size(); iIndex++)
+                    CheckSum.data[iIndex] = aLinkData[iIndex];
+            }
+
+            STORAGE_CHECK_CALL(sc_fs_storage_remove_content_addr(VertexID.m_asAddr, &CheckSum));
+            Cell.m_asVertex.m_uLinkSize = 0;
+        }
+
+        // then store data somewhere
+
+        // find checksum for data from the stream
+        sc_check_sum CheckSum;
+        if (!sc_link_calculate_checksum(stream, &CheckSum))
+        {
+            // note that current content of the link was destroyed
+            assert(0);
+            break;
+        }
+
+        // get the data size
+        uint32 iLength = 0;
+        STORAGE_CHECK_CALL(sc_stream_get_length(stream, &iLength));
+
+        std::vector<char> aDataToWrite;
+
+        // if it's small (less than size of check sum)
+        if (iLength < SC_CHECKSUM_LEN)
+        {
+            // then store it directly in device memory
+            aDataToWrite.reserve(iLength);
+
+            sc_uint32 iRead = 0;
+            STORAGE_CHECK_CALL(sc_stream_read_data(stream, &aDataToWrite[0], iLength, &iRead));
+            if (iRead != iLength)
+            {
+                // again, the current content of the link was destroyed - so there's assert
+                assert(0);
+                break;
+            }
+
+            // Nick: why should we do it? what purpose?
+            sc_fs_storage_add_content_addr(VertexID.m_asAddr, &CheckSum);
+
+            // update vertex type
+            Cell.m_asVertex.m_scType |= sc_flag_link_self_container;
+        }
+        else
+        {
+            // otherwise calculate check sum, which will be stored in device memory
+            // but actual data is going to external database
+            eResult = sc_fs_storage_write_content(VertexID.m_asAddr, &CheckSum, stream);
+            if (eResult != SC_RESULT_OK)
+            {
+                // again, the current content of the link was destroyed - so there's assert
+                assert(0);
+                break;
+            }
+
+            // and write checksum in device memory
+            for (int iIndex = 0; iIndex < CheckSum.len; iIndex++)
+                aDataToWrite.push_back(CheckSum.data[iIndex]);
+
+            // update vertex type
+            Cell.m_asVertex.m_scType &= ~sc_flag_link_self_container;
+        }
+
+        Cell.m_asVertex.m_uLinkSize = aDataToWrite.size();
+
+        // actual writing
+        const uint8 iSize = 4;
+        union
+        {
+            uint32  m_asUint32;
+            uint8   m_asUint8[iSize];
+        } Value;
+
+        bool bCreateError = false;
+        uint8 iIndex = 0;
+
+        while(true)
+        {
+            uint8 iByteIndex = iIndex % iSize;
+            Value.m_asUint8[iByteIndex] = aDataToWrite[iIndex];
+
+            bool bBreakLoop = (iIndex >= aDataToWrite.size() - 1);
+            if (bBreakLoop || (iByteIndex == iSize - 1))
+            {
+                bCreateError = !snp_link_create(VertexID, Value.m_asUint32, iIndex / iSize);
+                if (bCreateError)
+                    break;
+
+                Value.m_asUint32 = 0;
+            }
+
+            if (bBreakLoop)
+                break;
+
+            iIndex += 1;
+        }
+
+        if (bCreateError)
+        {
+            // note that there're data in external database was created.
+            // also some of link vertices could be created earlier
+            assert(0);
+            break;
+        }
+
+        // update vertex type
+        sc_storage_snp::Cell AddressMask;
+        SNP_BITFIELD_MASK_RESET(AddressMask.m_asBitfield.raw);
+        SNP_BITFIELD_MASK_SET(AddressMask.m_asVertex.m_ID.m_asBitfield.raw);
+        AddressMask.m_asVertex.m_uType = 0b11;
+
+        sc_storage_snp::Cell AddressData;
+        AddressData.m_asVertex.m_uType = static_cast<uint8>(sc_storage_snp::CellType::VERTEX);
+        AddressData.m_asVertex.m_ID.m_asBitfield = VertexID.m_asBitfield;
+
+        sc_storage_snp::Cell DataMask;
+        SNP_BITFIELD_MASK_RESET(DataMask.m_asBitfield.raw);
+        DataMask.m_asVertex.m_scType = -1;
+
+        sc_storage_snp::Device::snpInstruction Instruction;
+        Instruction.field.addressMask = AddressMask.m_asBitfield;
+        Instruction.field.addressData = AddressData.m_asBitfield;
+        Instruction.field.dataMask = DataMask.m_asBitfield;
+        Instruction.field.dataData = Cell.m_asBitfield;
+
+        bExists = s_Device.exec(true, snp::snpAssign, Instruction, &eErrorCode);
+        assert(bExists && eErrorCode == snpErrorCode::SUCCEEDED);
+
+        // but to be sure...
+        if (!bExists || eErrorCode != snpErrorCode::SUCCEEDED)
+            break;
+
+        eResult = SC_RESULT_OK;
+    }
+    while(0);
+
+    snp_leave_critical_section();
+    return eResult;
 }
 
 sc_result snp_element_find_link(const sc_memory_context *ctx, const sc_stream *stream, sc_addr **result, sc_uint32 *result_count)
 {
-    // not implemented yet
-    return SC_RESULT_ERROR;
+    snp_enter_critical_section();
+
+    sc_result eResult = SC_RESULT_ERROR;
+    do
+    {
+        if (!stream || !result || !result_count)
+        {
+            eResult = SC_RESULT_ERROR_INVALID_PARAMS;
+            break;
+        }
+
+        *result = nullptr;
+        *result_count = 0;
+
+        sc_check_sum CheckSum;
+        if (!sc_link_calculate_checksum(stream, &CheckSum))
+            break;
+
+        sc_addr *pResult = nullptr;
+        sc_uint32 iResultCount = 0;
+
+        // Nick: who must delete pResult?
+        if (sc_fs_storage_find_links_with_content(&CheckSum, &pResult, &iResultCount) != SC_RESULT_OK)
+            break;
+
+        if (!pResult || !iResultCount)
+        {
+            eResult = SC_RESULT_ERROR_NOT_FOUND;
+            break;
+        }
+
+        sc_storage_snp::Cell Cell;
+        sc_storage_snp::VertexID VertexID;
+
+        // need to check read access
+        std::vector<sc_addr> aPassedAddr;
+
+        bool bReadError = false;
+        for (uint32 iIndex = 0; iIndex < iResultCount; iIndex++)
+        {
+            VertexID.m_asAddr = pResult[iIndex];
+            if (!snp_vertex_find(VertexID))
+            {
+                // data in fs_storage is corrupted
+                assert(0);
+                bReadError = true;
+                break;
+            }
+
+            snpErrorCode eErrorCode;
+            bool bExists = s_Device.read(Cell.m_asBitfield, &eErrorCode);
+            assert(bExists && eErrorCode == snpErrorCode::SUCCEEDED);
+
+            if (!bExists || eErrorCode != snpErrorCode::SUCCEEDED)
+                break;
+
+            // check read access
+            if (sc_access_lvl_check_read(ctx->access_levels, Cell.m_asVertex.m_scAccessLevels))
+                aPassedAddr.push_back(VertexID.m_asAddr);
+        }
+
+        if (bReadError)
+            break;
+
+        if (!aPassedAddr.size())
+        {
+            eResult = SC_RESULT_ERROR_NO_READ_RIGHTS;
+            break;
+        }
+
+        *result = g_new0(sc_addr, aPassedAddr.size());
+        for (uint32 iIndex = 0; iIndex < aPassedAddr.size(); iIndex++)
+            (*result)[iIndex] = aPassedAddr[iIndex];
+
+        (*result_count) = aPassedAddr.size();
+        eResult = SC_RESULT_OK;
+    }
+    while(0);
+
+    snp_leave_critical_section();
+    return eResult;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -783,16 +1167,16 @@ bool snp_vertex_find(const sc_storage_snp::VertexID &vertex_id)
     // so just perform search instruction
 
     sc_storage_snp::Cell AddressMask;
-    snpBitfieldSet(AddressMask.m_asBitfield.raw, 0);
-    snpBitfieldSet(AddressMask.m_asVertex.m_ID.m_asBitfield.raw, ~0);
-    AddressMask.m_uiType = 0b11;
+    SNP_BITFIELD_MASK_RESET(AddressMask.m_asBitfield.raw);
+    SNP_BITFIELD_MASK_SET(AddressMask.m_asVertex.m_ID.m_asBitfield.raw);
+    AddressMask.m_asVertex.m_uType = 0b11;
 
     sc_storage_snp::Cell AddressData;
-    AddressData.m_uiType = static_cast<uint8>(sc_storage_snp::CellType::VERTEX);
+    AddressData.m_asVertex.m_uType = static_cast<uint8>(sc_storage_snp::CellType::VERTEX);
     AddressData.m_asVertex.m_ID.m_asBitfield = vertex_id.m_asBitfield;
 
     sc_storage_snp::Device::snpInstruction Instruction;
-    snpBitfieldSet(Instruction.raw, 0);
+    SNP_BITFIELD_DATA_SET(Instruction.raw, 0);
     Instruction.field.addressMask = AddressMask.m_asBitfield;
     Instruction.field.addressData = AddressData.m_asBitfield;
 
@@ -841,18 +1225,18 @@ bool snp_vertex_read(const sc_memory_context *ctx, const sc_storage_snp::VertexI
 bool snp_vertex_create(const sc_storage_snp::VertexID &vertex_id, sc_type type, sc_access_levels access_levels)
 {
     sc_storage_snp::Cell AddressMask;
-    snpBitfieldSet(AddressMask.m_asBitfield.raw, 0);
-    AddressMask.m_uiType = 0b11;
+    SNP_BITFIELD_DATA_SET(AddressMask.m_asBitfield.raw, 0);
+    AddressMask.m_asVertex.m_uType = 0b11;
 
     sc_storage_snp::Cell AddressData;
-    AddressData.m_uiType = static_cast<uint8>(sc_storage_snp::CellType::EMPTY);
+    AddressData.m_asVertex.m_uType = static_cast<uint8>(sc_storage_snp::CellType::EMPTY);
 
     sc_storage_snp::Cell DataMask;
-    snpBitfieldSet(DataMask.m_asBitfield.raw, ~0);
+    SNP_BITFIELD_DATA_SET(DataMask.m_asBitfield.raw, ~0);
 
     sc_storage_snp::Cell DataData;
-    snpBitfieldSet(DataData.m_asBitfield.raw, 0);
-    DataData.m_uiType = static_cast<uint8>(sc_storage_snp::CellType::VERTEX);
+    SNP_BITFIELD_DATA_SET(DataData.m_asBitfield.raw, 0);
+    DataData.m_asVertex.m_uType = static_cast<uint8>(sc_storage_snp::CellType::VERTEX);
     DataData.m_asVertex.m_ID.m_asBitfield = vertex_id.m_asBitfield;
     DataData.m_asVertex.m_scType = type;
     DataData.m_asVertex.m_scAccessLevels = access_levels;
@@ -878,18 +1262,18 @@ bool snp_vertex_create(const sc_storage_snp::VertexID &vertex_id, sc_type type, 
 bool snp_edge_create(const sc_storage_snp::VertexID &vertex_id1, const sc_storage_snp::VertexID &vertex_id2)
 {
     sc_storage_snp::Cell AddressMask;
-    snpBitfieldSet(AddressMask.m_asBitfield.raw, 0);
-    AddressMask.m_uiType = 0b11;
+    SNP_BITFIELD_DATA_SET(AddressMask.m_asBitfield.raw, 0);
+    AddressMask.m_asEdge.m_uType = 0b11;
 
     sc_storage_snp::Cell AddressData;
-    AddressData.m_uiType = static_cast<uint8>(sc_storage_snp::CellType::EMPTY);
+    AddressData.m_asEdge.m_uType = static_cast<uint8>(sc_storage_snp::CellType::EMPTY);
 
     sc_storage_snp::Cell DataMask;
-    snpBitfieldSet(DataMask.m_asBitfield.raw, ~0);
+    SNP_BITFIELD_DATA_SET(DataMask.m_asBitfield.raw, ~0);
 
     sc_storage_snp::Cell DataData;
-    snpBitfieldSet(DataData.m_asBitfield.raw, 0);
-    DataData.m_uiType = static_cast<uint8>(sc_storage_snp::CellType::EDGE);
+    SNP_BITFIELD_DATA_SET(DataData.m_asBitfield.raw, 0);
+    DataData.m_asEdge.m_uType = static_cast<uint8>(sc_storage_snp::CellType::EDGE);
     DataData.m_asEdge.m_ID1.m_asBitfield = vertex_id1.m_asBitfield;
     DataData.m_asEdge.m_ID2.m_asBitfield = vertex_id2.m_asBitfield;
 
@@ -909,6 +1293,149 @@ bool snp_edge_create(const sc_storage_snp::VertexID &vertex_id1, const sc_storag
         return false;
     }
     return bCreated;
+}
+
+bool snp_link_create(const sc_storage_snp::VertexID &vertex_id, uint32 checksum, uint8 index)
+{
+    sc_storage_snp::Cell AddressMask;
+    SNP_BITFIELD_DATA_SET(AddressMask.m_asBitfield.raw, 0);
+    AddressMask.m_asLink.m_uType = 0b11;
+
+    sc_storage_snp::Cell AddressData;
+    AddressData.m_asLink.m_uType = static_cast<uint8>(sc_storage_snp::CellType::EMPTY);
+
+    sc_storage_snp::Cell DataMask;
+    SNP_BITFIELD_DATA_SET(DataMask.m_asBitfield.raw, ~0);
+
+    sc_storage_snp::Cell DataData;
+    SNP_BITFIELD_DATA_SET(DataData.m_asBitfield.raw, 0);
+    DataData.m_asLink.m_uType = static_cast<uint8>(sc_storage_snp::CellType::LINK);
+    DataData.m_asLink.m_ID = vertex_id;
+    DataData.m_asLink.m_uChecksum = checksum;
+    DataData.m_asLink.m_uLinkIndex = index;
+
+    sc_storage_snp::Device::snpInstruction Instruction;
+    Instruction.field.addressMask = AddressMask.m_asBitfield;
+    Instruction.field.addressData = AddressData.m_asBitfield;
+    Instruction.field.dataMask = DataMask.m_asBitfield;
+    Instruction.field.dataData = DataData.m_asBitfield;
+
+    snpErrorCode eErrorCode;
+    bool bCreated = s_Device.exec(true, snp::snpAssign, Instruction, &eErrorCode);
+    if (eErrorCode != snpErrorCode::SUCCEEDED)
+    {
+        // print error log accordingly to returned code
+        // for now just assert in any case
+        assert(0);
+        return false;
+    }
+    return bCreated;
+}
+
+bool snp_link_destroy(const sc_storage_snp::VertexID &vertex_id)
+{
+    sc_storage_snp::Cell AddressMask;
+    SNP_BITFIELD_MASK_RESET(AddressMask.m_asBitfield.raw);
+    SNP_BITFIELD_MASK_SET(AddressMask.m_asLink.m_ID.m_asBitfield.raw);
+    AddressMask.m_asLink.m_uType = 0b11;
+
+    sc_storage_snp::Cell AddressData;
+    AddressData.m_asLink.m_uType = static_cast<uint8>(sc_storage_snp::CellType::LINK);
+    AddressData.m_asLink.m_ID.m_asBitfield = vertex_id.m_asBitfield;
+
+    sc_storage_snp::Cell DataMask;
+    SNP_BITFIELD_MASK_RESET(DataMask.m_asBitfield.raw);
+    DataMask.m_asLink.m_uType = 0b11;
+
+    // only reset cell type to 'empty' - it's enough to release cell
+    sc_storage_snp::Cell DataData;
+    DataData.m_asVertex.m_uType = static_cast<uint8>(sc_storage_snp::CellType::EMPTY);
+
+    // run instruction
+    sc_storage_snp::Device::snpInstruction Instruction;
+    Instruction.field.addressMask = AddressMask.m_asBitfield;
+    Instruction.field.addressData = AddressData.m_asBitfield;
+    Instruction.field.dataMask = DataMask.m_asBitfield;
+    Instruction.field.dataData = DataData.m_asBitfield;
+
+    snpErrorCode eErrorCode;
+    bool bFound = s_Device.exec(false, snp::snpAssign, Instruction, &eErrorCode);
+    if (eErrorCode != snpErrorCode::SUCCEEDED)
+    {
+        assert(0);
+        return false;
+    }
+    return bFound;
+}
+
+bool snp_link_read(const sc_storage_snp::VertexID &vertex_id, uint8 size, std::vector<char> &output)
+{
+    if (!size) return false;
+    output.clear();
+
+    sc_storage_snp::Cell AddressMask;
+    SNP_BITFIELD_MASK_RESET(AddressMask.m_asBitfield.raw);
+    SNP_BITFIELD_MASK_SET(AddressMask.m_asLink.m_ID.m_asBitfield.raw);
+    AddressMask.m_asLink.m_uType = -1;
+    AddressMask.m_asLink.m_uLinkIndex = -1;
+
+    sc_storage_snp::Cell AddressData;
+    AddressData.m_asLink.m_uType = static_cast<uint8>(sc_storage_snp::CellType::LINK);
+    AddressData.m_asLink.m_ID.m_asBitfield = vertex_id.m_asBitfield;
+
+    sc_storage_snp::Cell DataMask;
+    SNP_BITFIELD_MASK_RESET(DataMask.m_asBitfield.raw);
+
+    // run instruction (we can skip data-data field as it's not used)
+    sc_storage_snp::Device::snpInstruction Instruction;
+    Instruction.field.addressMask = AddressMask.m_asBitfield;
+    Instruction.field.dataMask = DataMask.m_asBitfield;
+
+    const uint8 iSize = 4;
+    union
+    {
+        uint32  m_asUint32;
+        uint8   m_asUint8[iSize];
+    } Value;
+
+    sc_storage_snp::Cell Cell;
+    bool bReadError = false;
+
+    uint8 iNumberOfCells = (size - 1) / iSize + 1;
+    for (uint8 iIndex = 0; iIndex < iNumberOfCells; iIndex++)
+    {
+        AddressData.m_asLink.m_uLinkIndex = iIndex;
+        Instruction.field.addressData = AddressData.m_asBitfield;
+
+        snpErrorCode eErrorCode;
+        bReadError = !s_Device.exec(false, snp::snpAssign, Instruction, &eErrorCode);
+        if (bReadError || eErrorCode != snpErrorCode::SUCCEEDED)
+        {
+            assert(0);
+            break;
+        }
+
+        bReadError = !s_Device.read(Cell.m_asBitfield, &eErrorCode);
+        if (bReadError || eErrorCode != snpErrorCode::SUCCEEDED)
+        {
+            assert(0);
+            break;
+        }
+
+        Value.m_asUint32 = Cell.m_asLink.m_uChecksum;
+        for (uint8 iByteIndex = 0; iByteIndex < iSize; iByteIndex++)
+            output.push_back(Value.m_asUint8[iByteIndex]);
+    }
+
+    if (bReadError)
+    {
+        output.clear();
+        return false;
+    }
+
+    // delete redundant bytes
+    output.erase(output.begin() + size, output.end());
+    return true;
 }
 
 #endif //ENABLE_HARDWARE_STORAGE

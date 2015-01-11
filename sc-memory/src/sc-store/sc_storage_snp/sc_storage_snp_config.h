@@ -29,6 +29,7 @@ typedef snp::snpDevice<g_iCellBitwidth> Device;
 //            cell size = 12 byte = 3 * uint32 = 96 bit
 //
 // Graph vertex:
+// + optional 'link size' field
 //            +---------+-------------------+-----------------------------+---------+---------+
 //            |   type  |      vertexID     |          attributes         | reserved|  Search |
 //            +---------+-------------------+-----------------------------+---------+---------+
