@@ -1,14 +1,14 @@
 #ifndef _sc_storage_snp_glue_h_
 #define _sc_storage_snp_glue_h_
 
-#include "../sc_types.h"
-#include "../sc_stream.h"
-
 #ifdef ENABLE_HARDWARE_STORAGE
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#include "../sc_types.h"
+#include "../sc_stream.h"
 
 sc_bool     snp_initialize(const char *path, sc_bool clear);
 void        snp_shutdown(sc_bool save_state);

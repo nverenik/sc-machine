@@ -11,5 +11,5 @@ SUBDIRS = sc-memory \
 # include this config to qmake to replace storage
 # implementation with hardware (CUDA in the best case)
 HardwareStorage {
-    DEFINES += ENABLE_HARDWARE_STORAGE SNP_TARGET_ROCKS_DB
+    DEFINES += ENABLE_HARDWARE_STORAGE
 }

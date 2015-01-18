@@ -4,7 +4,10 @@
 #ifdef ENABLE_HARDWARE_STORAGE
 
 #include "sc_storage_snp_config.h"
+
+extern "C" {
 #include "../sc_types.h"
+}
 
 namespace sc_storage_snp {
 

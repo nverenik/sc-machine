@@ -10,12 +10,14 @@
 using snp::snpErrorCode;
 
 #include "sc_storage_snp_types.h"
-#include "../../sc_memory_private.h"
 
+extern "C" {
+#include "../../sc_memory_private.h"
 #include "../sc_storage.h"
 #include "../sc_fs_storage.h"
 #include "../sc_link_helpers.h"
 #include "../sc_stream_memory.h"
+}
 
 // create static device instance with predefined bitwidth
 static sc_storage_snp::Device s_Device;

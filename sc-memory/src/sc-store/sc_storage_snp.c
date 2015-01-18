@@ -21,13 +21,13 @@ along with OSTIS.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "sc_storage.h"
-#include "../sc_memory_private.h"
-
-#include <glib.h>
 
 #ifdef ENABLE_HARDWARE_STORAGE
 
+#include "../sc_memory_private.h"
 #include "sc_storage_snp/sc_storage_snp_glue.h"
+
+#include <glib.h>
 
 #define PARAM_NOT_USED(__param__) (void)(__param__)
 

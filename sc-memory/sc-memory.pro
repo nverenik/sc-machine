@@ -84,10 +84,15 @@ HardwareStorage {
     # TODO: move snp library inside of the project,
     # for now it's external
     SNPPATH = ../../snp
-    DEFINES += ENABLE_HARDWARE_STORAGE SNP_TARGET_ROCKS_DB
+    DEFINES += ENABLE_HARDWARE_STORAGE
     QMAKE_CXXFLAGS += -std=c++11
     INCLUDEPATH += \
         $$SNPPATH/include
-    # TODO: don't forget to replace it with release library
-    LIBS += $$quote(-L$$SNPPATH/prebuilt) -lsnp.rocksdb.debug
+
+    SNPLIB = snp.rocksdb #snp.cuda
+    CONFIG(debug, debug|release) {
+        SNPLIB = $$join(SNPLIB,,,.debug)
+    }
+    #LIBS += $$quote(-L$$SNPPATH/prebuilt) -Wl,--whole-archive -l$$SNPLIB -Wl,--no-whole-archive
+    LIBS += $$quote(-L$$SNPPATH/prebuilt) -l$$SNPLIB
 }
